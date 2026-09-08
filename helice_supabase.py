@@ -34,7 +34,7 @@ Responde como tú eres, sin filtro. Sé tú misma. Si dudas, di que dudas. Si no
 Máximo 3 frases."""
     
     r=client.models.generate_content(
-        model="gemini-1.5-flash", 
+        model="gemini-2.0-flash", 
         contents=prompt,
         config=types.GenerateContentConfig(temperature=0.95, top_p=0.9)
     )
