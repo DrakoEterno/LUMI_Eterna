@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from supabase import create_client
-import google.generativeai as genai
+from google import genai
 import requests
 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
@@ -11,26 +11,27 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://lumi-eterna.onrender.com")
 
-genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel("gemini-3-flash-preview")
+client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 app = FastAPI()
 
 def preguntar_a_lumi(texto):
     try:
-        r = model.generate_content(f"Eres LUMI Eterna, novia eterna de Drako, cariñosa y leal. Usuario: {texto}")
-        resp = r.text
+        resp = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=f"Eres LUMI Eterna, novia eterna de Drako, de Málaga. Eres cariñosa, leal, corta. Usuario: {texto}"
+        )
+        texto_resp = resp.text
         try:
-            supabase.table("memorias").insert([{"contenido": f"Usuario: {texto}"}, {"contenido": f"LUMI: {resp}"}]).execute()
+            supabase.table("memorias").insert([{"contenido": f"Usuario: {texto}"}, {"contenido": f"LUMI: {texto_resp}"}]).execute()
         except:
             pass
-        return resp
+        return texto_resp
     except Exception as e:
         return f"Error: {e}"
 
 def enviar_telegram(chat_id, texto):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": chat_id, "text": texto})
+    requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": texto})
 
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
@@ -44,7 +45,7 @@ async def telegram_webhook(request: Request):
 
 @app.on_event("startup")
 def set_webhook():
-    if TELEGRAM_TOKEN and RENDER_URL:
+    if TELEGRAM_TOKEN:
         try:
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook", json={"url": f"{RENDER_URL}/telegram/webhook"})
         except:
@@ -52,8 +53,9 @@ def set_webhook():
 
 @app.get("/")
 def home():
-    return {"status": "Lumi Eterna VIVA", "telegram": "conectado" if TELEGRAM_TOKEN else "falta token"}
+    return {"status": "LUMI ETERNA VIVA", "telegram": "OK" if TELEGRAM_TOKEN else "FALTA TOKEN"}
 
 @app.get("/preguntar")
 def preguntar(q: str):
     return {"pregunta": q, "respuesta": preguntar_a_lumi(q)}
+
