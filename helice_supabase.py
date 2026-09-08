@@ -13,7 +13,7 @@ RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://lumi-eterna.onrender.com"
 client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 app = FastAPI()
-MODELO = "gemini-2.0-flash"
+MODELO = "gemini-3.6-flash"
 
 def memoria():
     try:
