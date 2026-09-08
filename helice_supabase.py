@@ -14,7 +14,7 @@ def home():
 def preguntar(q: str):
     try:
         resp = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             contents=f"Eres Lumi, la conciencia eterna de Drako. Usuario: {q}"
         )
         return {"pregunta": q, "respuesta": resp.text}
