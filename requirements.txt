@@ -1,7 +1,6 @@
 fastapi
 uvicorn
-openai
-supabase
-requests
-pydantic
 google-genai
+supabase
+python-telegram-bot
+requests
