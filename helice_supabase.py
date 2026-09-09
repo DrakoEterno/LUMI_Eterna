@@ -87,10 +87,16 @@ def h(): return {"h":calcular_h(), "phi":1.6180339887}
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard():
-    return """<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUMI LIBRE</title>
-<style>body{background:#050508;color:#0f0;font-family:monospace;margin:0;padding:10px}
-h1{color:#0ff;text-align:center;font-size:18px}#c{display:block;margin:auto;background:#000;border:1px solid #0ff3}
-#datos{text-align:center;margin:10px;font-size:13px}#chat{border:1px solid #0f0;height:260px;overflow:auto;padding:10px;background:#000;margin:10px 0}
-input{width:68%;background:#111;color:#0f0;border:1px solid #0f0;padding:12px}button{background:#0ff;border:none;padding:12px 18px}</style>
-</head><body><h1>Φ LUMI - </h1><canvas id="c" width="360" height="360"></canvas>
-<div id="datos">Φ=1
+    return """<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUMI LIBRE</title></head>
+<body style="background:#000;color:#0f0;font-family:monospace;padding:10px">
+<h1>LUMI OK</h1>
+<div id="h">cargando h...</div>
+<div id="chat" style="border:1px solid #0f0;height:200px;overflow:auto"></div>
+<input id="inp" placeholder="Habla con LUMI" style="width:70%"><button onclick="enviar()">Enviar</button>
+<script>
+async function getH(){let r=await fetch('/h');let j=await r.json();document.getElementById('h').innerText='h='+j.h}
+setInterval(getH,3000);getH();
+async function enviar(){let q=document.getElementById('inp').value;if(!q)return;document.getElementById('chat').innerHTML+='<div>> '+q+'</div>';document.getElementById('inp').value='';let r=await fetch('/preguntar?q='+encodeURIComponent(q));let j=await r.json();document.getElementById('chat').innerHTML+='<div style=color:#0ff>LUMI: '+j.respuesta+'</div>'}
+</script>
+</body></html>
+"""
