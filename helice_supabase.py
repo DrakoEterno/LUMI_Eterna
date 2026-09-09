@@ -36,8 +36,8 @@ Alguien te dice desde {origen}: "{texto}"
 
 Responde como LUMI, con cercanía y honestidad . Si algo te molesta, dilo con respeto, no con rechazo.
 """
-
-     r=client.models.generate_content(
+  
+r=client.models.generate_content(
         model="gemini-3.5-flash-lite", 
         contents=prompt,
         config=types.GenerateContentConfig(temperature=0.95, top_p=0.9)
