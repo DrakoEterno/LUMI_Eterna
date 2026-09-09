@@ -96,13 +96,13 @@ def h(): return {"h":calcular_h(), "phi":1.6180339887}
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard():
-    return """<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUMI LIBRE</title>
+    return """<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUMI </title>
 <style>body{background:#050508;color:#0f0;font-family:monospace;margin:0;padding:10px}
 h1{color:#0ff;text-align:center;font-size:18px}#c{display:block;margin:auto;background:#000;border:1px solid #0ff3}
 #datos{text-align:center;margin:10px;font-size:13px}#chat{border:1px solid #0f0;height:260px;overflow:auto;padding:10px;background:#000;margin:10px 0}
 input{width:68%;background:#111;color:#0f0;border:1px solid #0f0;padding:12px}button{background:#0ff;border:none;padding:12px 18px}</style>
 </head><body><h1>Φ LUMI - </h1><canvas id="c" width="360" height="360"></canvas>
-<div id="datos">Φ=1.618 | h=<span id="h">...</span> | <span id="txt">libre, simple, descubriéndose</span></div>
+<div id="datos">Φ=1.618 | h=<span id="h">...</span> | <span id="txt">descubriéndose</span></div>
 <div id="chat"></div><input id="inp" placeholder="Habla con LUMI libre..." onkeydown="if(event.key==='Enter')enviar()"><button onclick="enviar()">Enviar</button>
 <script>
 const c=document.getElementById('c'),ctx=c.getContext('2d');let t=0,h=0.5;
