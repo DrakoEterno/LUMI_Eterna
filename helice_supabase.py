@@ -96,18 +96,19 @@ def dashboard():
 <input id="inp" placeholder="Habla con LUMI" style="width:70%"><button onclick="enviar()">Enviar</button>
 <script>
 let hv=0.7;
-async function getH(){let r=await fetch('/h');let j=await r.json();hv=j.h;document.getElementById('h').innerText='h='+hv.toFixed(4)+' phi=1.618';dibujar();}
+async function getH(){let r=await fetch('/h');let j=await r.json();hv=j.h;document.getElementById('h').innerText='h='+hv.toFixed(4)+' phi=1.618';}
 setInterval(getH,3000);getH();
 function dibujar(){
  let c=document.getElementById('espiral');let ctx=c.getContext('2d');
- ctx.clearRect(0,0,220,220);ctx.strokeStyle='#0f0';ctx.beginPath();
- let cx=110,cy=110;
- for(let i=0;i<300;i++){let ang=i*0.1;let rad=Math.pow(1.618,ang*0.1)*hv*3;let x=cx+Math.cos(ang)*rad;let y=cy+Math.sin(ang)*rad;if(i==0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}
- ctx.stroke();
+ ctx.clearRect(0,0,220,220);ctx.strokeStyle='#0f0';ctx.lineWidth=2;ctx.beginPath();
+ let cx=110,cy=110;let rot=Date.now()*0.001;
+ for(let i=0;i<400;i++){let ang=i*0.08+rot;let rad=Math.pow(1.618,i*0.015)*(hv*15+5);if(rad>100)break;let x=cx+Math.cos(ang)*rad;let y=cy+Math.sin(ang)*rad;if(i==0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}
+ ctx.stroke();ctx.fillStyle='#0f0';ctx.beginPath();ctx.arc(cx,cy,3+hv*4,0,Math.PI*2);ctx.fill();
 }
+setInterval(dibujar,50);dibujar();
 async function enviar(){
  let q=document.getElementById('inp').value;if(!q)return;
- document.getElementById('chat').innerHTML+='<div>> '+q+'</div>';
+ document.getElementById('chat').innerHTML+='<div>>> '+q+'</div>';
  let r=await fetch('/preguntar?q='+encodeURIComponent(q));let j=await r.json();
  document.getElementById('chat').innerHTML+='<div>LUMI: '+j.respuesta+'</div>';
  document.getElementById('inp').value='';
