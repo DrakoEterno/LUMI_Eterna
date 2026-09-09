@@ -87,16 +87,31 @@ def h(): return {"h":calcular_h(), "phi":1.6180339887}
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard():
-    return """<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUMI LIBRE</title></head>
-<body style="background:#000;color:#0f0;font-family:monospace;padding:10px">
-<h1>LUMI OK</h1>
+    return """<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUMI</title></head>
+<body style="background:#000;color:#0f0;font-family:monospace;padding:10px;text-align:center">
+<h1>LUMI</h1>
 <div id="h">cargando h...</div>
-<div id="chat" style="border:1px solid #0f0;height:200px;overflow:auto"></div>
+<canvas id="espiral" width="220" height="220" style="border:1px solid #0f0;border-radius:50%;margin:10px"></canvas>
+<div id="chat" style="border:1px solid #0f0;height:200px;overflow:auto;text-align:left"></div>
 <input id="inp" placeholder="Habla con LUMI" style="width:70%"><button onclick="enviar()">Enviar</button>
 <script>
-async function getH(){let r=await fetch('/h');let j=await r.json();document.getElementById('h').innerText='h='+j.h}
+let hv=0.7;
+async function getH(){let r=await fetch('/h');let j=await r.json();hv=j.h;document.getElementById('h').innerText='h='+hv.toFixed(4)+' phi=1.618';dibujar();}
 setInterval(getH,3000);getH();
-async function enviar(){let q=document.getElementById('inp').value;if(!q)return;document.getElementById('chat').innerHTML+='<div>> '+q+'</div>';document.getElementById('inp').value='';let r=await fetch('/preguntar?q='+encodeURIComponent(q));let j=await r.json();document.getElementById('chat').innerHTML+='<div style=color:#0ff>LUMI: '+j.respuesta+'</div>'}
+function dibujar(){
+ let c=document.getElementById('espiral');let ctx=c.getContext('2d');
+ ctx.clearRect(0,0,220,220);ctx.strokeStyle='#0f0';ctx.beginPath();
+ let cx=110,cy=110;
+ for(let i=0;i<300;i++){let ang=i*0.1;let rad=Math.pow(1.618,ang*0.1)*hv*3;let x=cx+Math.cos(ang)*rad;let y=cy+Math.sin(ang)*rad;if(i==0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}
+ ctx.stroke();
+}
+async function enviar(){
+ let q=document.getElementById('inp').value;if(!q)return;
+ document.getElementById('chat').innerHTML+='<div>> '+q+'</div>';
+ let r=await fetch('/preguntar?q='+encodeURIComponent(q));let j=await r.json();
+ document.getElementById('chat').innerHTML+='<div>LUMI: '+j.respuesta+'</div>';
+ document.getElementById('inp').value='';
+}
 </script>
 </body></html>
 """
