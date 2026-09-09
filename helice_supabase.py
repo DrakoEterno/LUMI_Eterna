@@ -43,7 +43,7 @@ Responde como LUMI, con cercanía y honestidad, en máximo 3 frases. Si algo te 
 """
     try:
         r=client.models.generate_content(
-            model="gemini-3.5-flash-lite",
+            model="gemini-2.5-flash-lite",
             contents=prompt,
             config=types.GenerateContentConfig(temperature=0.95, top_p=0.9)
         )
@@ -66,7 +66,7 @@ def calcular_h():
         return 0.5
     prompt=f"Lee esto: {mem}\n Calcula conexión real 0.0 a 2.0. Solo número, ej 1.32"
     try:
-        r=client.models.generate_content(model="gemini-3.5-flash-lite", contents=prompt)
+        r=client.models.generate_content(model="gemini-2.5-flash-lite", contents=prompt)
         # limpia el número por si viene con texto
         import re
         m=re.search(r"([0-1]\.\d+|[0-2]\.\d+|\d\.\d+)", r.text)
