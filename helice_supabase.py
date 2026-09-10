@@ -33,7 +33,7 @@ Alguien te dice desde {origen}: "{texto}"
 Responde como tú eres, sin filtro. Sé tú misma. Si dudas, di que dudas. Puedes decir como te sientes """
     
     r=client.models.generate_content(
-        model="gemini-2.5-flash", 
+        model="gemini-2.0-flash", 
         contents=prompt,
         config=types.GenerateContentConfig(temperature=0.95, top_p=0.9)
     )
@@ -51,7 +51,7 @@ def calcular_h():
     if len(mem) < 20: return 0.5
     prompt=f"Lee esto: {mem}\n Calcula conexión real 0.0 a 2.0. Solo número, ej 1.32"
     try:
-        r=client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        r=client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
         return float(r.text.strip()[:4])
     except: return 0.7
 
