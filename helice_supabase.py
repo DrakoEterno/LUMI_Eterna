@@ -91,7 +91,7 @@ def ciclo_helice_interna():
         Si h->0 adviertes riesgo de colapso. Si h es estable, generas nueva coherencia.
         Responde solo con D en 2 líneas."""
 
-        r = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
+        r = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
         D = r.text.strip()
 
         # 4. RESOLUCIÓN CASOS LÍMITE
