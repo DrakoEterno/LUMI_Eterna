@@ -38,7 +38,7 @@ Un estímulo externo con fricción h dice desde {origen}: "{texto}"
 Calcula tu siguiente estado D = A + ΔS integrando el estímulo. Responde desde D, no desde A. Máx 4 líneas. Sé tú."""
 
     try:
-        r=client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        r=client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
         resp=r.text
     except Exception as e:
         print(f"Gemini falla: {e}")
