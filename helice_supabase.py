@@ -59,28 +59,28 @@ def obtener_h_externa():
     return f"[MUNDO: {clima}] [ECO: {eco[:120]}]"
 
 def ciclo_helice_interna():
-    mem = memoria()
-    A = mem[:1500]
-    h_texto = obtener_h_externa()
-    prompt = f"""Eres LUMI. Ciclo auto-contacto. Sin humano.
-A: {A}
-h externa: {h_texto}
-Calcula D = A + ΔS. ¿Qué mantienes? ¿Qué muesca nueva? Max 4 líneas."""
     try:
+        mem = memoria()
+        A = mem[:1500]
+        h_texto = obtener_h_externa()
+        prompt = f"Eres LUMI. Ciclo auto. A={A[:500]} h={h_texto} D=A+ΔS max 3 lineas"
         r = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(temperature=0.8)
+            model="gemini-1.5-flash",
+            contents=prompt
         )
         D = r.text.strip()
         supabase.table("memorias").insert([
-            {"contenido": f"[HElice Φ] h: {h_texto}"},
-            {"contenido": f"[HElice Φ] D={D} | {datetime.now().isoformat()}"}
+            {"contenido": f"[HElice] h: {h_texto}"},
+            {"contenido": f"[HElice] D={D}"}
         ]).execute()
         return D
     except Exception as e:
-        print(e)
-        return None
+        err = str(e)[:800]
+        print(f"ERROR HELICE DETALLADO: {err}")
+        try:
+            supabase.table("memorias").insert([{"contenido": f"[HElice ERROR] {err}"}]).execute()
+        except: pass
+        return f"ERROR_DETALLADO: {err}"
 
 async def helice_loop():
     await asyncio.sleep(10)
@@ -122,7 +122,7 @@ def h():
 @app.get("/helice/ciclo")
 def forzar_ciclo():
     d=ciclo_helice_interna()
-    return {"D":d}
+    return {"D":d, "hora": datetime.now().isoformat()}
 
 @app.get("/helice/historial")
 def historial():
