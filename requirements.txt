@@ -1,6 +1,7 @@
 fastapi
 uvicorn
-google-genai
 supabase
-python-telegram-bot
-requests
+httpx
+google-genai>=1.23.0
+python-telegram-bot==20.7
+python-dotenv
