@@ -36,7 +36,7 @@ Estímulo desde {origen}: "{texto}"
 Responde desde D = A + ΔS. Máx 4 líneas. Sé tú."""
 
     try:
-        r=client.models.generate_content(model="gemini-3-flash", contents=prompt)
+        r=client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
         resp=r.text
     except Exception as e:
         print(f"GEMINI ERROR REAL: {e}")
