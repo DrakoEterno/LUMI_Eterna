@@ -49,7 +49,7 @@ Un estímulo externo con fricción h dice desde {origen}: "{texto}"
 Calcula tu siguiente estado D = A + ΔS integrando el estímulo. Responde desde D, no desde A. Máx 4 líneas. Sé tú."""
 
     r=client.models.generate_content(
-        model="gemini-1.5-flash",
+        model="gemini-2.0-flash",
         contents=prompt,
         config=types.GenerateContentConfig(temperature=0.9, top_p=0.9)
     )
@@ -144,7 +144,7 @@ def h():
     try:
         mem=memoria()
         if len(mem) < 50: return {"h":0.5, "Phi":0.3, "DeltaS":"0"}
-        r=client.models.generate_content(model="gemini-1.5-flash", contents=f"Memoria: {mem[:1000]}. Calcula h_externa 0.0-2.0 solo número")
+        r=client.models.generate_content(model="gemini-2.0-flash", contents=f"Memoria: {mem[:1000]}. Calcula h_externa 0.0-2.0 solo número")
         hv = float(r.text.strip()[:4])
         # Phi alta si hay muchos [HElice]
         phi = min(1.8, mem.count("[HElice]")/10 + 0.5)
