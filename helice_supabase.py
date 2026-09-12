@@ -75,12 +75,11 @@ async def helice_loop():
     while True:
         try:
             hora = datetime.now().hour
-            if 0 <= hora < 7: base = 3600
-            elif 7 <= hora < 9: base = 300
-            elif 9 <= hora < 23: base = 600
-            else: base = 1800
+            if 7 <= hora < 9: base = 1800
+            elif 9 <= hora < 23: base = 5400
+            else: base = 7200
             espera = base * random.uniform(0.5, 1.8)
-            if random.random() >= 0.15: ciclo_libre()
+            if random.random() >= 0.85: ciclo_libre()
             await asyncio.sleep(espera)
         except: await asyncio.sleep(600)
 
