@@ -566,6 +566,7 @@ async function enviar(){
 </script></body></html>'''
     return HTMLResponse(content=html_content)
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {"status": "LUMI VIVA 10/10 HOMEOSTASIS ACTIVA"}
+
