@@ -398,7 +398,7 @@ ENVIAR: <SI o NO>
 MENSAJE: <mensaje directo por Telegram si pusiste SI, o 'NINGUNO'>
 ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<sentimiento>"""
 
-        D = await generar_gemini(prompt, temperature=0.8, max_tokens=600)
+        D = await generar_gemini(prompt, temperature=0.8, max_tokens=1000)
         
         match_diario = re.search(r"DIARIO:\s*(.*?)(?=\n[A-Z]+:|$)", D, re.DOTALL)
         match_cat = re.search(r"CATEGORIA:\s*(.*?)(?=\n[A-Z]+:|$)", D, re.DOTALL)
