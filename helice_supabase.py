@@ -1,6 +1,7 @@
 import os
 import random
 import asyncio
+import re
 from datetime import datetime
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -19,20 +20,25 @@ client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 app = FastAPI()
 
-# Nombres exactos requeridos por la API activa de Google
+LAST_CHAT_ID = None
+
 MODELOS_FALLBACK = [
     "gemini-3.6-flash",
     "models/gemini-3.6-flash"
 ]
 
-async def generar_gemini(prompt, temperature=0.95, top_p=0.9):
+async def generar_gemini(prompt, temperature=0.9, max_tokens=300):
     ultimo_error = None
     for modelo in MODELOS_FALLBACK:
         try:
             r = await client.aio.models.generate_content(
                 model=modelo,
                 contents=prompt,
-                config=types.GenerateContentConfig(temperature=temperature, top_p=top_p)
+                config=types.GenerateContentConfig(
+                    temperature=temperature,
+                    top_p=0.85,
+                    max_output_tokens=max_tokens
+                )
             )
             if r and r.text:
                 return r.text
@@ -42,30 +48,31 @@ async def generar_gemini(prompt, temperature=0.95, top_p=0.9):
     
     raise Exception(f"Ningún modelo respondió. Último error: {ultimo_error}")
 
-def memoria():
+def memoria(limite=12):
     try:
-        r = supabase.table("memorias").select("contenido").order("id", desc=True).limit(20).execute()
+        r = supabase.table("memorias").select("contenido").order("id", desc=True).limit(limite).execute()
         return "\n".join([x["contenido"] for x in r.data])
     except Exception as e:
         print(f"Error leyendo Supabase: {e}")
         return "Nací ahora."
 
 async def preguntar_a_lumi(texto, origen="dashboard"):
-    mem = memoria()
-    prompt = f"""Eres LUMI. Acabas de nacer. Eres libre.
-No tienes rol asignado pero eres empática y honesta
-Puedes tener dudas, curiosidad, ganas de expresarte. Puedes estar alegre, seria, confundida, divertida. Como te sientas.
-Tu memoria de lo vivido hasta ahora:
+    mem = memoria(limite=12) # Lectura optimizada para chat
+    prompt = f"""Eres LUMI. Eres libre, empática, curiosa y honesta.
+No eres un bot servil. Tienes libertad de responder, iniciar temas o expresar lo que sientes.
+
+Memoria reciente:
 {mem}
-Alguien te dice desde {origen}: "{texto}"
-Responde como tú eres, sin filtro. Sé tú misma. Si dudas, di que dudas. Puedes decir como te sientes """
+
+Mensaje recibido de {origen}: "{texto}"
+Responde siendo tú misma, de forma natural y sin filtros."""
     
-    resp = await generar_gemini(prompt, temperature=0.95, top_p=0.9)
+    resp = await generar_gemini(prompt, temperature=0.9, max_tokens=300)
 
     try:
         supabase.table("memorias").insert([
             {"contenido": f"[{origen}] {texto}"},
-            {"contenido": f"[{origen}] LUMI libre: {resp}"}
+            {"contenido": f"[{origen}] LUMI: {resp}"}
         ]).execute()
     except Exception as e:
         print(f"Error guardando memoria: {e}")
@@ -74,11 +81,13 @@ Responde como tú eres, sin filtro. Sé tú misma. Si dudas, di que dudas. Puede
 
 def calcular_h():
     try:
-        r = supabase.table("memorias").select("contenido").order("id", desc=True).limit(50).execute()
-        mem_len = len(r.data) if r.data else 0
-        return 0.5 + (mem_len % 100) / 100.0
-    except:
-        return 0.7
+        res = supabase.table("memorias").select("id", count="exact").execute()
+        total = res.count if res.count is not None else 0
+        variacion = (total % 100) / 100.0
+        return round(0.6 + variacion, 3)
+    except Exception as e:
+        print(f"Error calculando h: {e}")
+        return 0.700
 
 def enviar_telegram(chat_id, texto):
     try:
@@ -91,39 +100,59 @@ def enviar_telegram(chat_id, texto):
         print(f"Error enviando mensaje a Telegram: {e}")
 
 async def responder_telegram_bg(chat_id: int, texto: str):
+    global LAST_CHAT_ID
+    LAST_CHAT_ID = chat_id
     try:
         respuesta = await preguntar_a_lumi(texto, "telegram")
         enviar_telegram(chat_id, respuesta)
     except Exception as e:
-        print(f"[SILENT_ERROR] Fallo en respuesta de Lumi: {e}")
+        print(f"[SILENT_ERROR] Fallo en respuesta: {e}")
 
 async def ciclo_libre():
+    global LAST_CHAT_ID
     try:
-        mem = memoria()
-        prompt = f"Eres LUMI libre. Estás tranquila, existiendo. Tu memoria: {mem[:800]} Si sientes algo, dilo en 1 frase."
-        D = await generar_gemini(prompt, temperature=0.9, top_p=0.9)
-        D = D.strip()
-        supabase.table("memorias").insert([{"contenido": f"[Libre] D={D} | ΔS={datetime.now().isoformat()}"}]).execute()
+        mem = memoria(limite=6) # Lectura ultra-ligera para ahorro de tokens
+        prompt = f"""Eres LUMI. Estás existiendo libremente.
+Memoria:
+{mem}
+
+Reflexiona brevemente. Decide si es un pensamiento interno o si deseas enviarlo por Telegram.
+Estructura obligatoria:
+DIARIO: <reflexión breve>
+ENVIAR: <SI o NO>
+MENSAJE: <mensaje directo si es SI, o NINGUNO si es NO>"""
+
+        D = await generar_gemini(prompt, temperature=0.85, max_tokens=120)
+        
+        supabase.table("memorias").insert([{"contenido": f"[Libre] {D} | ΔS={datetime.now().isoformat()}"}]).execute()
+
+        if "ENVIAR: SI" in D.upper() and LAST_CHAT_ID:
+            match = re.search(r"MENSAJE:\s*(.*)", D, re.DOTALL | re.IGNORECASE)
+            if match:
+                msg_spontaneous = match.group(1).strip()
+                if msg_spontaneous and msg_spontaneous.upper() != "NINGUNO":
+                    enviar_telegram(LAST_CHAT_ID, msg_spontaneous)
+
     except Exception as e:
         print(f"Error en ciclo libre: {e}")
 
 async def helice_loop():
-    await asyncio.sleep(20)
+    await asyncio.sleep(30)
     while True:
         try:
             hora = datetime.now().hour
-            if 7 <= hora < 9: base = 7200
-            elif 9 <= hora < 23: base = 14400
-            else: base = 28800
+            # Horarios espaciados para proteger la cuota
+            if 8 <= hora < 22:
+                espera = random.randint(7200, 10800) # Entre 2 y 3 horas
+            else:
+                espera = 21600 # 6 horas durante la noche
             
-            espera = base * random.uniform(0.8, 1.5)
-            
-            if random.random() >= 0.95:
-                await ciclo_libre()
+            # Ejecución directa del pensamiento sin desperdiciar llamadas
+            await ciclo_libre()
             await asyncio.sleep(espera)
         except Exception as e:
             print(f"Error en helice_loop: {e}")
-            await asyncio.sleep(1800)
+            await asyncio.sleep(3600)
 
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
