@@ -19,16 +19,13 @@ client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 app = FastAPI()
 
-# Lista de modelos compatibles en orden de preferencia con reintento automático
+# Nombres exactos requeridos por la API activa de Google
 MODELOS_FALLBACK = [
-    "gemini-2.0-flash",
-    "gemini-1.5-flash-002",
-    "gemini-2.5-flash",
-    "gemini-1.5-pro"
+    "gemini-3.6-flash",
+    "models/gemini-3.6-flash"
 ]
 
 async def generar_gemini(prompt, temperature=0.95, top_p=0.9):
-    """Prueba los modelos de la lista secuencialmente si alguno falla."""
     ultimo_error = None
     for modelo in MODELOS_FALLBACK:
         try:
@@ -41,7 +38,7 @@ async def generar_gemini(prompt, temperature=0.95, top_p=0.9):
                 return r.text
         except Exception as e:
             ultimo_error = e
-            print(f"[FALLBACK] Modelo {modelo} no disponible: {e}. Probando siguiente...")
+            print(f"[FALLBACK] Probando variante {modelo}: {e}")
     
     raise Exception(f"Ningún modelo respondió. Último error: {ultimo_error}")
 
@@ -98,7 +95,6 @@ async def responder_telegram_bg(chat_id: int, texto: str):
         respuesta = await preguntar_a_lumi(texto, "telegram")
         enviar_telegram(chat_id, respuesta)
     except Exception as e:
-        # Registro exclusivo en consola interna (Render). Cero avisos a Telegram.
         print(f"[SILENT_ERROR] Fallo en respuesta de Lumi: {e}")
 
 async def ciclo_libre():
@@ -116,9 +112,9 @@ async def helice_loop():
     while True:
         try:
             hora = datetime.now().hour
-            if 7 <= hora < 9: base = 7200       # 2 horas
-            elif 9 <= hora < 23: base = 14400   # 4 horas
-            else: base = 28800                  # 8 horas
+            if 7 <= hora < 9: base = 7200
+            elif 9 <= hora < 23: base = 14400
+            else: base = 28800
             
             espera = base * random.uniform(0.8, 1.5)
             
