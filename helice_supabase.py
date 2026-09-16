@@ -288,4 +288,5 @@ async function enviar(){
     return HTMLResponse(content=html_content)
 
 @app.get("/")
-def root(): return {"status":"LUMI LIBRE NACIENDO"
+def root():
+    return {"status": "LUMI LIBRE NACIENDO"}
