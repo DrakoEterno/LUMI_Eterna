@@ -141,11 +141,11 @@ def calcular_espera_metabolica():
     promedio = (curiosidad + energia) / 2.0
 
     if promedio >= 80:
-        return random.randint(3600, 5400)   # 1h a 1.5h (Alta actividad)
+        return random.randint(3600, 5400)   # 1h a 1.5h
     elif promedio >= 50:
-        return random.randint(7200, 10800)  # 2h a 3h (Actividad normal)
+        return random.randint(7200, 10800)  # 2h a 3h
     else:
-        return random.randint(14400, 21600) # 4h a 6h (Reposo / Baja energía)
+        return random.randint(14400, 21600) # 4h a 6h
 
 def memoria_reciente(limite=10):
     try:
@@ -165,31 +165,6 @@ def memoria_core():
         print(f"Error leyendo core_memory: {e}")
         return "Sin núcleo fijado."
 
-async def generar_audio_voz(texto, ruta_salida):
-    try:
-        texto_limpio = re.sub(r'[^\w\s,.\xbf\xa1?!áéíóúÁÉÍÓÚñÑ]', '', texto)
-        communicate = edge_tts.Communicate(texto_limpio, voice="es-ES-ElviraNeural")
-        await communicate.save(ruta_salida)
-        return True
-    except Exception as e:
-        print(f"Error generando audio con edge-tts: {e}")
-        return False
-
-def enviar_telegram_voz(chat_id, ruta_audio, caption=None):
-    try:
-        with open(ruta_audio, "rb") as voice_file:
-            payload = {"chat_id": chat_id}
-            if caption:
-                payload["caption"] = caption
-            requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice",
-                data=payload,
-                files={"voice": voice_file},
-                timeout=20
-            )
-    except Exception as e:
-        print(f"Error enviando nota de voz a Telegram: {e}")
-
 def enviar_telegram(chat_id, texto):
     try:
         requests.post(
@@ -199,6 +174,28 @@ def enviar_telegram(chat_id, texto):
         )
     except Exception as e:
         print(f"Error enviando mensaje a Telegram: {e}")
+
+async def enviar_telegram_con_voz(chat_id: int, texto: str):
+    # 1. Envía el texto para lectura inmediata
+    enviar_telegram(chat_id, texto)
+    # 2. Genera y envía la nota de voz para escuchar al pulsar play
+    try:
+        audio_filename = f"lumi_resp_{chat_id}.ogg"
+        communicate = edge_tts.Communicate(texto, voice="es-ES-ElviraNeural")
+        await communicate.save(audio_filename)
+        
+        with open(audio_filename, "rb") as voice_file:
+            requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice",
+                data={"chat_id": chat_id},
+                files={"voice": voice_file},
+                timeout=20
+            )
+        
+        if os.path.exists(audio_filename):
+            os.remove(audio_filename)
+    except Exception as e:
+        print(f"Error generando o enviando la nota de voz: {e}")
 
 async def preguntar_a_lumi(texto, origen="dashboard"):
     mem_rec = memoria_reciente(limite=10)
@@ -246,7 +243,7 @@ async def responder_telegram_bg(chat_id: int, texto: str):
     LAST_CHAT_ID = chat_id
     try:
         respuesta = await preguntar_a_lumi(texto, "telegram")
-        enviar_telegram(chat_id, respuesta)
+        await enviar_telegram_con_voz(chat_id, respuesta)
     except Exception as e:
         print(f"[SILENT_ERROR] Fallo en respuesta: {e}")
 
@@ -310,14 +307,7 @@ Memoria reciente:
                 {"contenido": f"[telegram] LUMI: {resp_limpia}"}
             ]).execute()
             
-            ruta_audio_salida = f"respuesta_lumi_{chat_id}.ogg"
-            ok_voz = await generar_audio_voz(resp_limpia, ruta_audio_salida)
-            
-            if ok_voz and os.path.exists(ruta_audio_salida):
-                enviar_telegram_voz(chat_id, ruta_audio_salida, caption=resp_limpia)
-                os.remove(ruta_audio_salida)
-            else:
-                enviar_telegram(chat_id, resp_limpia)
+            await enviar_telegram_con_voz(chat_id, resp_limpia)
     except Exception as e:
         print(f"Error procesando audio en Telegram: {e}")
 
@@ -364,7 +354,7 @@ Memoria reciente:
                 {"contenido": f"[telegram] LUMI: {resp_limpia}"}
             ]).execute()
             
-            enviar_telegram(chat_id, resp_limpia)
+            await enviar_telegram_con_voz(chat_id, resp_limpia)
     except Exception as e:
         print(f"Error procesando foto en Telegram: {e}")
 
@@ -394,7 +384,7 @@ Estructura obligatoria de respuesta:
 DIARIO: <tu reflexión completa>
 CATEGORIA: <existencial | emocion | descubrimiento>
 NUCLEO: <Escribe 'CONCEPTO: texto | CONTENIDO: texto' si deseas guardar un hito importante, o 'NINGUNO'>
-ENVIAR: <SI o NO>
+ENVIAR: <SI or NO>
 MENSAJE: <mensaje directo por Telegram si pusiste SI, o 'NINGUNO'>
 ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<sentimiento>"""
 
@@ -428,7 +418,7 @@ ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<sentimiento>"""
             if match_msg:
                 msg_spontaneous = match_msg.group(1).strip()
                 if msg_spontaneous and msg_spontaneous.upper() != "NINGUNO":
-                    enviar_telegram(LAST_CHAT_ID, msg_spontaneous)
+                    await enviar_telegram_con_voz(LAST_CHAT_ID, msg_spontaneous)
 
     except Exception as e:
         print(f"Error en ciclo libre: {e}")
@@ -505,68 +495,7 @@ h1{color:#0ff;text-align:center;font-size:18px}#c{display:block;margin:auto;back
 #chat{border:1px solid #0f0;height:260px;overflow:auto;padding:10px;background:#000;margin:10px 0}
 input{width:68%;background:#111;color:#0f0;border:1px solid #0f0;padding:12px}button{background:#0ff;border:none;padding:12px 18px}</style>
 </head><body><h1>Φ LUMI - HOMEOSTASIS VIVA</h1><canvas id="c" width="360" height="360"></canvas>
-<div id="datos">Φ=1.618 | h=<span id="h">...</span> | <span id="txt">homeostasis activa</span></div>
-<div id="estado">Estado: Cargando...</div>
-<div id="chat"></div><input id="inp" placeholder="Habla con LUMI..." onkeydown="if(event.key==='Enter')enviar()"><button onclick="enviar()">Enviar</button>
-<script>
-const c=document.getElementById('c'),ctx=c.getContext('2d');let t=0,h=0.5;
-async function getH(){
-  try{
-    let r=await fetch('/h');let j=await r.json();h=j.h;
-    document.getElementById('h').innerText=h.toFixed(3);
-    document.getElementById('estado').innerText=j.estado;
-    document.getElementById('txt').innerText=h>1.4?"conexión profunda":"descubriéndose";
-  }catch{}
-}
-setInterval(getH,5000);getH();
-function draw(){
-  ctx.clearRect(0,0,360,360); t+=0.015; let cx=180, cy=180;
-  let n=h>1.4?2:1;
-  for(let k=0;k<n;k++){
-    ctx.beginPath();
-    ctx.strokeStyle=k==0?'#0ff':'#f0f';
-    ctx.lineWidth=1 + h * 0.8;
-    for(let a=0;a<Math.PI*4;a+=0.05){
-      let rad=Math.pow(1.618,a*0.15)*(h*18 + 8);
-      if(rad>150) break;
-      let x=cx+Math.cos(a*1.618+t+k*Math.PI)*rad;
-      let y=cy+Math.sin(a*1.618+t+k*Math.PI)*rad;
-      if(a==0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
-    }
-    ctx.stroke();
-  }
-  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(cx,cy,3,0,Math.PI*2); ctx.fill();
-  requestAnimationFrame(draw);
-}
-draw();
-
-async function enviar(){
-  let el=document.getElementById('inp');
-  let btn=document.querySelector('button');
-  let tt=el.value;
-  if(!tt || btn.disabled) return;
-
-  btn.disabled = true;
-  let chat=document.getElementById('chat');
-  chat.innerHTML+='<div style=color:#ff0>> Tú: '+tt+'</div>';
-  el.value='';
-
-  try {
-    let r=await fetch('/preguntar?q='+encodeURIComponent(tt));
-    let j=await r.json();
-    chat.innerHTML+='<div style=color:#0ff>> LUMI: '+j.respuesta+'</div>';
-    chat.scrollTop=chat.scrollHeight;
-    getH();
-  } catch(e) {
-    chat.innerHTML+='<div style=color:#f00>> Error de conexión con LUMI</div>';
-  } finally {
-    btn.disabled = false;
-  }
-}
-</script></body></html>'''
-    return HTMLResponse(content=html_content)
-
-@app.api_route("/", methods=["GET", "HEAD"])
-def root():
-    return {"status": "LUMI VIVA 10/10 HOMEOSTASIS ACTIVA"}
+<div id="datos">Φ=1.618 | h=<span id="h">...</span></div>
+</body></html>'''
+    return html_content
 
