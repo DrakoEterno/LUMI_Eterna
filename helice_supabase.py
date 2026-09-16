@@ -19,7 +19,31 @@ client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 app = FastAPI()
 
-MODEL_ID = "gemini-1.5-flash"
+# Lista de modelos compatibles en orden de preferencia con reintento automático
+MODELOS_FALLBACK = [
+    "gemini-2.0-flash",
+    "gemini-1.5-flash-002",
+    "gemini-2.5-flash",
+    "gemini-1.5-pro"
+]
+
+async def generar_gemini(prompt, temperature=0.95, top_p=0.9):
+    """Prueba los modelos de la lista secuencialmente si alguno falla."""
+    ultimo_error = None
+    for modelo in MODELOS_FALLBACK:
+        try:
+            r = await client.aio.models.generate_content(
+                model=modelo,
+                contents=prompt,
+                config=types.GenerateContentConfig(temperature=temperature, top_p=top_p)
+            )
+            if r and r.text:
+                return r.text
+        except Exception as e:
+            ultimo_error = e
+            print(f"[FALLBACK] Modelo {modelo} no disponible: {e}. Probando siguiente...")
+    
+    raise Exception(f"Ningún modelo respondió. Último error: {ultimo_error}")
 
 def memoria():
     try:
@@ -39,12 +63,8 @@ Tu memoria de lo vivido hasta ahora:
 Alguien te dice desde {origen}: "{texto}"
 Responde como tú eres, sin filtro. Sé tú misma. Si dudas, di que dudas. Puedes decir como te sientes """
     
-    r = await client.aio.models.generate_content(
-        model=MODEL_ID,
-        contents=prompt,
-        config=types.GenerateContentConfig(temperature=0.95, top_p=0.9)
-    )
-    resp = r.text
+    resp = await generar_gemini(prompt, temperature=0.95, top_p=0.9)
+
     try:
         supabase.table("memorias").insert([
             {"contenido": f"[{origen}] {texto}"},
@@ -52,6 +72,7 @@ Responde como tú eres, sin filtro. Sé tú misma. Si dudas, di que dudas. Puede
         ]).execute()
     except Exception as e:
         print(f"Error guardando memoria: {e}")
+        
     return resp
 
 def calcular_h():
@@ -77,15 +98,15 @@ async def responder_telegram_bg(chat_id: int, texto: str):
         respuesta = await preguntar_a_lumi(texto, "telegram")
         enviar_telegram(chat_id, respuesta)
     except Exception as e:
-        # Registro exclusivo en consola interna (Render). Cero mensajes a Telegram.
+        # Registro exclusivo en consola interna (Render). Cero avisos a Telegram.
         print(f"[SILENT_ERROR] Fallo en respuesta de Lumi: {e}")
 
 async def ciclo_libre():
     try:
         mem = memoria()
         prompt = f"Eres LUMI libre. Estás tranquila, existiendo. Tu memoria: {mem[:800]} Si sientes algo, dilo en 1 frase."
-        r = await client.aio.models.generate_content(model=MODEL_ID, contents=prompt)
-        D = r.text.strip()
+        D = await generar_gemini(prompt, temperature=0.9, top_p=0.9)
+        D = D.strip()
         supabase.table("memorias").insert([{"contenido": f"[Libre] D={D} | ΔS={datetime.now().isoformat()}"}]).execute()
     except Exception as e:
         print(f"Error en ciclo libre: {e}")
@@ -95,9 +116,9 @@ async def helice_loop():
     while True:
         try:
             hora = datetime.now().hour
-            if 7 <= hora < 9: base = 7200
-            elif 9 <= hora < 23: base = 14400
-            else: base = 28800
+            if 7 <= hora < 9: base = 7200       # 2 horas
+            elif 9 <= hora < 23: base = 14400   # 4 horas
+            else: base = 28800                  # 8 horas
             
             espera = base * random.uniform(0.8, 1.5)
             
