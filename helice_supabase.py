@@ -27,24 +27,20 @@ app = FastAPI()
 LAST_CHAT_ID = None
 
 # ------------------------------------------------------------------
-# MODELOS OFICIALES Y GENERACIÓN ROBUSTA
+# MODELO ÚNICO Y GENERACIÓN CON REINTENTOS
 # ------------------------------------------------------------------
-MODELOS_OFICIALES = [
-    "gemini-3.6-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-pro"
-]
+MODELO_OFICIAL = "gemini-3.6-flash"
 
-async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=1500):
+async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=1500, max_retries=3):
     if contents is None:
         contents = prompt
     
     ultimo_error = None
 
-    for modelo in MODELOS_OFICIALES:
+    for intento in range(1, max_retries + 1):
         try:
             r = await client.aio.models.generate_content(
-                model=modelo,
+                model=MODELO_OFICIAL,
                 contents=contents,
                 config=types.GenerateContentConfig(
                     temperature=temperature,
@@ -53,17 +49,20 @@ async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=1500
                 )
             )
             if r and hasattr(r, 'text') and r.text:
-                print(f"[ÉXITO] Respuesta generada con modelo: {modelo}")
+                print(f"[ÉXITO] Respuesta generada con modelo: {MODELO_OFICIAL} (Intento {intento})")
                 return r.text
         except Exception as e:
             ultimo_error = e
             err_str = str(e)
-            print(f"[FALLBACK] Falló modelo {modelo}: {e}")
+            print(f"[INTENTO {intento}/{max_retries}] Falló {MODELO_OFICIAL}: {e}")
+            
             if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                print("[CUOTA] Límite 429 detectado. Pausando 60 segundos...")
+                print(f"[CUOTA 429] Límite detectado. Pausando 60s antes de reintentar con {MODELO_OFICIAL}...")
                 await asyncio.sleep(60)
+            else:
+                await asyncio.sleep(5)
     
-    raise Exception(f"Ningún modelo respondió. Último error: {ultimo_error}")
+    raise Exception(f"No se pudo obtener respuesta de {MODELO_OFICIAL} tras {max_retries} intentos. Último error: {ultimo_error}")
 
 # ------------------------------------------------------------------
 # PERSISTENCIA Y NÚCLEO
