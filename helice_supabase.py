@@ -27,37 +27,21 @@ app = FastAPI()
 LAST_CHAT_ID = None
 
 # ------------------------------------------------------------------
-# DETECCIÓN DINÁMICA DE MODELOS Y GENERACIÓN ROBUSTA
+# MODELOS OFICIALES Y GENERACIÓN ROBUSTA
 # ------------------------------------------------------------------
-async def obtener_modelos_validos():
-    try:
-        modelos = []
-        # Consulta directamente a la API de Google los modelos soportados
-        for m in client.models.list():
-            name = m.name.replace("models/", "") if hasattr(m, 'name') and m.name else ""
-            methods = getattr(m, 'supported_generation_methods', []) or []
-            if "generateContent" in methods and "gemini" in name:
-                modelos.append(name)
-        
-        # Ordenamos priorizando los 'flash' (más rápidos/menos cuota) y luego 'pro'
-        flash_models = [m for m in modelos if "flash" in m]
-        pro_models = [m for m in modelos if "pro" in m and "flash" not in m]
-        otros_models = [m for m in modelos if m not in flash_models and m not in pro_models]
-        
-        ordenados = flash_models + pro_models + otros_models
-        return ordenados if ordenados else ["gemini-1.5-flash", "gemini-2.5-flash"]
-    except Exception as e:
-        print(f"Error al listar modelos desde la API de Google: {e}")
-        return ["gemini-1.5-flash", "gemini-2.5-flash"]
+MODELOS_OFICIALES = [
+    "gemini-3.6-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-pro"
+]
 
 async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=1500):
     if contents is None:
         contents = prompt
     
-    modelos_disponibles = await obtener_modelos_validos()
     ultimo_error = None
 
-    for modelo in modelos_disponibles:
+    for modelo in MODELOS_OFICIALES:
         try:
             r = await client.aio.models.generate_content(
                 model=modelo,
@@ -69,14 +53,15 @@ async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=1500
                 )
             )
             if r and hasattr(r, 'text') and r.text:
+                print(f"[ÉXITO] Respuesta generada con modelo: {modelo}")
                 return r.text
         except Exception as e:
             ultimo_error = e
             err_str = str(e)
-            print(f"[FALLBACK] Falló variante {modelo}: {e}")
+            print(f"[FALLBACK] Falló modelo {modelo}: {e}")
             if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                print("[CUOTA] Límite 429 detectado. Pausando 20 segundos...")
-                await asyncio.sleep(20)
+                print("[CUOTA] Límite 429 detectado. Pausando 10 segundos...")
+                await asyncio.sleep(10)
     
     raise Exception(f"Ningún modelo respondió. Último error: {ultimo_error}")
 
