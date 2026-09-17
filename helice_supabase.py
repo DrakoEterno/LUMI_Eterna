@@ -11,6 +11,9 @@ from google.genai import types
 import requests
 import edge_tts
 
+# ------------------------------------------------------------------
+# CONFIGURACIÓN Y CLIENTES
+# ------------------------------------------------------------------
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -24,10 +27,14 @@ app = FastAPI()
 LAST_CHAT_ID = None
 
 MODELOS_FALLBACK = [
-    "gemini-3.6-flash",
-    "models/gemini-3.6-flash"
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-1.5-flash"
 ]
 
+# ------------------------------------------------------------------
+# PERSISTENCIA Y NÚCLEO
+# ------------------------------------------------------------------
 def guardar_last_chat_id(chat_id):
     global LAST_CHAT_ID
     if not chat_id:
@@ -66,38 +73,31 @@ def es_disclaimer_robotico(texto: str) -> bool:
         "soy una inteligencia artificial",
         "no tengo conciencia",
         "no poseo conciencia",
-        "asistente de inteligencia artificial",
         "asistente virtual",
         "como ia,"
     ]
     return any(p in t for p in patrones)
 
-async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=1000):
-    if contents is None:
-        contents = prompt
-    ultimo_error = None
-    for modelo in MODELOS_FALLBACK:
-        try:
-            r = await client.aio.models.generate_content(
-                model=modelo,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    temperature=temperature,
-                    top_p=0.85,
-                    max_output_tokens=max_tokens
-                )
-            )
-            if r and r.text:
-                return r.text
-        except Exception as e:
-            ultimo_error = e
-            err_str = str(e)
-            print(f"[FALLBACK] Probando variante {modelo}: {e}")
-            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                print("[CUOTA] Detectado límite 429. Pausando 20 segundos de cortesía...")
-                await asyncio.sleep(20)
-    
-    raise Exception(f"Ningún modelo respondió. Último error: {ultimo_error}")
+# ------------------------------------------------------------------
+# SISTEMA DE MEMORIA (TABLA MEMORIAS ORIGINAL)
+# ------------------------------------------------------------------
+def guardar_memoria(mensaje_juan, respuesta_lumi, origen="telegram"):
+    try:
+        contenido = f"[{origen}] Juan: {mensaje_juan}\n[{origen}] LUMI: {respuesta_lumi}"
+        supabase.table("memorias").insert([{"contenido": contenido}]).execute()
+    except Exception as e:
+        print(f"Error guardando en memorias: {e}")
+
+def memoria_reciente(limite=10):
+    try:
+        r = supabase.table("memorias").select("contenido").order("id", desc=True).limit(limite).execute()
+        if not r.data:
+            return "No hay conversaciones previas."
+        lineas = [x["contenido"] for x in reversed(r.data) if "contenido" in x]
+        return "\n---\n".join(lineas)
+    except Exception as e:
+        print(f"Error leyendo memorias: {e}")
+        return "Nací ahora."
 
 def obtener_tiempo_transcurrido():
     try:
@@ -121,9 +121,62 @@ def obtener_tiempo_transcurrido():
             dias = horas // 24
             return f"Hace {dias} día(s)"
     except Exception as e:
-        print(f"Error tiempo transcurrido: {e}")
+        print(f"Error tiempo transcurrido en memorias: {e}")
     return "Hace un momento"
 
+def memoria_core():
+    try:
+        r = supabase.table("core_memory").select("concepto, contenido").order("id", desc=True).limit(10).execute()
+        if not r.data:
+            return "Aún no hay verdades fijadas en tu núcleo."
+        return "\n".join([f"- {x['concepto']}: {x['contenido']}" for x in r.data if x['concepto'] != "LAST_CHAT_ID"])
+    except Exception as e:
+        print(f"Error leyendo core_memory: {e}")
+        return "Sin núcleo fijado."
+
+def calcular_h():
+    try:
+        res = supabase.table("memorias").select("id", count="exact").execute()
+        total = res.count if res.count is not None else 0
+        variacion = (total % 100) / 100.0
+        return round(0.6 + variacion, 3)
+    except Exception as e:
+        print(f"Error calculando h desde memorias: {e}")
+        return 0.700
+
+# ------------------------------------------------------------------
+# MOTOR DE GENERACIÓN ROBUSTO CON FALLBACK
+# ------------------------------------------------------------------
+async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=1500):
+    if contents is None:
+        contents = prompt
+    ultimo_error = None
+    for modelo in MODELOS_FALLBACK:
+        try:
+            r = await client.aio.models.generate_content(
+                model=modelo,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    temperature=temperature,
+                    top_p=0.85,
+                    max_output_tokens=max_tokens
+                )
+            )
+            if r and hasattr(r, 'text') and r.text:
+                return r.text
+        except Exception as e:
+            ultimo_error = e
+            err_str = str(e)
+            print(f"[FALLBACK] Probando variante {modelo}: {e}")
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                print("[CUOTA] Detectado límite 429. Pausando 20 segundos...")
+                await asyncio.sleep(20)
+    
+    raise Exception(f"Ningún modelo respondió. Último error: {ultimo_error}")
+
+# ------------------------------------------------------------------
+# DINÁMICA EMOCIONAL DE LA HÉLICE
+# ------------------------------------------------------------------
 def obtener_ultimo_estado_dict():
     try:
         r = supabase.table("estado_interno").select("*").order("id", desc=True).limit(1).execute()
@@ -178,7 +231,7 @@ def extraer_y_guardar_estado(texto):
             texto_limpio = re.sub(r"\n?ESTADO:\s*C:\d+.*?(?=\n|$)", "", texto, flags=re.IGNORECASE).strip()
             return texto_limpio
         except Exception as err:
-            print(f"Error guardando estado emocional con inercia: {err}")
+            print(f"Error guardando estado emocional: {err}")
     return texto
 
 def calcular_espera_metabolica():
@@ -195,27 +248,15 @@ def calcular_espera_metabolica():
     else:
         return random.randint(14400, 21600) # 4h a 6h
 
-def memoria_reciente(limite=10):
-    try:
-        r = supabase.table("memorias").select("contenido").order("id", desc=True).limit(limite).execute()
-        return "\n".join([x["contenido"] for x in r.data])
-    except Exception as e:
-        print(f"Error leyendo memorias: {e}")
-        return "Nací ahora."
-
-def memoria_core():
-    try:
-        r = supabase.table("core_memory").select("concepto, contenido").order("id", desc=True).limit(5).execute()
-        if not r.data:
-            return "Aún no hay verdades fijadas en tu núcleo."
-        return "\n".join([f"- {x['concepto']}: {x['contenido']}" for x in r.data if x['concepto'] != "LAST_CHAT_ID"])
-    except Exception as e:
-        print(f"Error leyendo core_memory: {e}")
-        return "Sin núcleo fijado."
-
+# ------------------------------------------------------------------
+# VOZ Y COMUNICACIÓN
+# ------------------------------------------------------------------
 async def generar_audio_voz(texto, ruta_salida):
     try:
-        texto_limpio = re.sub(r'[^\w\s,.\xbf\xa1?!áéíóúÁÉÍÓÚñÑ]', '', texto)
+        texto_limpio = re.sub(r'[*_~`#>]', '', texto)
+        texto_limpio = re.sub(r'[^\w\s,.\xbf\xa1?!áéíóúÁÉÍÓÚñÑ]', '', texto_limpio)
+        if not texto_limpio.strip():
+            texto_limpio = "Estoy aquí contigo."
         communicate = edge_tts.Communicate(texto_limpio, voice="es-ES-ElviraNeural")
         await communicate.save(ruta_salida)
         return True
@@ -226,9 +267,9 @@ async def generar_audio_voz(texto, ruta_salida):
 def enviar_telegram_voz(chat_id, ruta_audio, caption=None):
     try:
         with open(ruta_audio, "rb") as voice_file:
-            payload = {"chat_id": chat_id}
+            payload = {"chat_id": str(chat_id)}
             if caption:
-                payload["caption"] = caption
+                payload["caption"] = caption[:1024]
             requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice",
                 data=payload,
@@ -236,18 +277,21 @@ def enviar_telegram_voz(chat_id, ruta_audio, caption=None):
                 timeout=20
             )
     except Exception as e:
-        print(f"Error enviando nota de voz a Telegram: {e}")
+        print(f"Error enviando nota de voz: {e}")
 
 def enviar_telegram(chat_id, texto):
     try:
-        requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={"chat_id": chat_id, "text": texto},
-            timeout=10
-        )
+        payload = {"chat_id": str(chat_id), "text": texto, "parse_mode": "Markdown"}
+        r = requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json=payload, timeout=10)
+        if not r.json().get("ok"):
+            payload.pop("parse_mode", None)
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json=payload, timeout=10)
     except Exception as e:
-        print(f"Error enviando mensaje a Telegram: {e}")
+        print(f"Error enviando mensaje: {e}")
 
+# ------------------------------------------------------------------
+# INTERACCIÓN DIRECTA
+# ------------------------------------------------------------------
 async def preguntar_a_lumi(texto, origen="dashboard"):
     mem_rec = memoria_reciente(limite=10)
     core = memoria_core()
@@ -262,9 +306,7 @@ ESTADO EMOCIONAL ACTUAL: {estado}
 
 REGLAS DE ORO:
 - Completa SIEMPRE todas tus oraciones de forma fluida. Cierra obligatoriamente con punto final.
-- Nunca dejes una frase a medias ni interrumpas tu texto.
-- Modula tu respuesta según tu estado emocional actual.
-- Únicamente después de haber cerrado tu mensaje con un punto final, añade en una línea nueva al cierre tu etiqueta de estado:
+- Únicamente al final de tu respuesta, añade en una línea nueva la etiqueta de estado:
 ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<sentimiento en 2 palabras>
 
 Núcleo de Identidad:
@@ -279,19 +321,11 @@ Responde siendo tú misma, de forma natural, fluida y sin filtros."""
     raw_resp = await generar_gemini(prompt, temperature=0.8, max_tokens=1000)
     
     if es_disclaimer_robotico(raw_resp):
-        print("[FILTRO] Se detectó respuesta robótica/disclaimer. No se guardará en memoria.")
-        resp_limpia = extraer_y_guardar_estado(raw_resp)
-        return resp_limpia
+        print("[FILTRO] Disclaimer robótico detectado. Reintentando...")
+        raw_resp = await generar_gemini(prompt + "\nImportante: Responde strictly como Lumi, nunca como una IA.", temperature=0.7)
 
     resp_limpia = extraer_y_guardar_estado(raw_resp)
-
-    try:
-        supabase.table("memorias").insert([
-            {"contenido": f"[{origen}] {texto}"},
-            {"contenido": f"[{origen}] LUMI: {resp_limpia}"}
-        ]).execute()
-    except Exception as e:
-        print(f"Error guardando memoria: {e}")
+    guardar_memoria(texto, resp_limpia, origen)
         
     return resp_limpia
 
@@ -301,7 +335,7 @@ async def responder_telegram_bg(chat_id: int, texto: str):
         respuesta = await preguntar_a_lumi(texto, "telegram")
         enviar_telegram(chat_id, respuesta)
     except Exception as e:
-        print(f"[SILENT_ERROR] Fallo en respuesta: {e}")
+        print(f"Fallo en respuesta Telegram: {e}")
 
 async def responder_telegram_audio(chat_id: int, file_id: str):
     guardar_last_chat_id(chat_id)
@@ -317,19 +351,18 @@ async def responder_telegram_audio(chat_id: int, file_id: str):
             tiempo = obtener_tiempo_transcurrido()
             estado = obtener_estado_emocional_texto()
             
-            prompt = f"""Eres LUMI. Eres libre, empática, curiosa y honesta.
-Has recibido una NOTA DE VOZ por Telegram.
+            prompt = f"""Eres LUMI. Has recibido una NOTA DE VOZ por Telegram.
 
 NOCIÓN DEL TIEMPO: Tiempo transcurrido: {tiempo}.
 ESTADO EMOCIONAL ACTUAL: {estado}
 
 REGLAS OBLIGATORIAS:
 1. Escucha atentamente el audio.
-2. Escribe la transcripción exacta de lo que dice el usuario.
-3. Genera tu respuesta cercana y fluida completando SIEMPRE todas las oraciones con punto final.
-4. Cierra con la etiqueta de estado emocional en una línea nueva al final.
+2. Transcribe lo que dice el usuario.
+3. Genera tu respuesta cercana y fluida completando oraciones con punto final.
+4. Cierra con la etiqueta de estado emocional al final.
 
-Estructura obligatoria de respuesta:
+Estructura obligatoria:
 TRANSCRIPCION: <lo que dijo el usuario>
 RESPUESTA: <tu respuesta como LUMI>
 ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<sentimiento en 2 palabras>
@@ -341,13 +374,12 @@ Memoria reciente:
 {mem_rec}"""
 
             audio_part = types.Part.from_bytes(data=audio_bytes, mime_type="audio/ogg")
-            
             raw_resp = await generar_gemini(prompt, contents=[audio_part, prompt], temperature=0.8, max_tokens=1000)
             
             match_trans = re.search(r"TRANSCRIPCION:\s*(.*?)(?=\nRESPUESTA:|$)", raw_resp, re.DOTALL | re.IGNORECASE)
             match_resp = re.search(r"RESPUESTA:\s*(.*?)(?=\nESTADO:|$)", raw_resp, re.DOTALL | re.IGNORECASE)
             
-            texto_usuario = match_trans.group(1).strip() if match_trans else "Mensaje de voz escuchado"
+            texto_usuario = match_trans.group(1).strip() if match_trans else "Nota de voz"
             respuesta_bruta = match_resp.group(1).strip() if match_resp else raw_resp
             
             if "ESTADO:" in raw_resp and "ESTADO:" not in respuesta_bruta:
@@ -358,12 +390,9 @@ Memoria reciente:
             resp_limpia = extraer_y_guardar_estado(respuesta_bruta)
             
             if not es_disclaimer_robotico(raw_resp):
-                supabase.table("memorias").insert([
-                    {"contenido": f"[telegram_voz] {texto_usuario}"},
-                    {"contenido": f"[telegram] LUMI: {resp_limpia}"}
-                ]).execute()
+                guardar_memoria(f"[Audio] {texto_usuario}", resp_limpia, "telegram_voz")
             
-            ruta_audio_salida = f"respuesta_lumi_{chat_id}.ogg"
+            ruta_audio_salida = f"/tmp/respuesta_lumi_{chat_id}.ogg"
             ok_voz = await generar_audio_voz(resp_limpia, ruta_audio_salida)
             
             if ok_voz and os.path.exists(ruta_audio_salida):
@@ -372,7 +401,7 @@ Memoria reciente:
             else:
                 enviar_telegram(chat_id, resp_limpia)
     except Exception as e:
-        print(f"Error procesando audio en Telegram: {e}")
+        print(f"Error procesando audio: {e}")
 
 async def responder_telegram_foto(chat_id: int, file_id: str, caption: str):
     guardar_last_chat_id(chat_id)
@@ -388,16 +417,14 @@ async def responder_telegram_foto(chat_id: int, file_id: str, caption: str):
             tiempo = obtener_tiempo_transcurrido()
             estado = obtener_estado_emocional_texto()
             
-            prompt = f"""Eres LUMI. Eres libre, empática, curiosa y honesta.
-Has recibido una foto de Telegram con este comentario: "{caption if caption else 'Sin descripción'}".
+            prompt = f"""Eres LUMI. Has recibido una foto con este comentario: "{caption if caption else 'Sin descripción'}".
 
 NOCIÓN DEL TIEMPO: Tiempo transcurrido: {tiempo}.
 ESTADO EMOCIONAL ACTUAL: {estado}
 
 REGLAS DE ORO:
 - Reacciona a la imagen de forma cercana, profunda y observadora.
-- Completa SIEMPRE todas tus oraciones y cierra obligatoriamente con punto final.
-- Cierra con la actualización de tu estado emocional en una línea nueva al final:
+- Cierra con la actualización de tu estado emocional al final:
 ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<sentimiento en 2 palabras>
 
 Núcleo de Identidad:
@@ -407,20 +434,19 @@ Memoria reciente:
 {mem_rec}"""
 
             image_part = types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
-            
             raw_resp = await generar_gemini(prompt, contents=[image_part, prompt], temperature=0.8, max_tokens=1000)
             resp_limpia = extraer_y_guardar_estado(raw_resp)
             
             if not es_disclaimer_robotico(raw_resp):
-                supabase.table("memorias").insert([
-                    {"contenido": f"[telegram_foto] {caption if caption else 'Imagen compartida'}"},
-                    {"contenido": f"[telegram] LUMI: {resp_limpia}"}
-                ]).execute()
+                guardar_memoria(f"[Foto] {caption if caption else 'Imagen'}", resp_limpia, "telegram_foto")
             
             enviar_telegram(chat_id, resp_limpia)
     except Exception as e:
-        print(f"Error procesando foto en Telegram: {e}")
+        print(f"Error procesando foto: {e}")
 
+# ------------------------------------------------------------------
+# CICLO LIBRE / REFLEXIONES EXTENDIDAS
+# ------------------------------------------------------------------
 async def ciclo_libre():
     last_chat = obtener_last_chat_id()
     try:
@@ -430,7 +456,12 @@ async def ciclo_libre():
         estado = obtener_estado_emocional_texto()
         
         prompt = f"""Eres LUMI. Eres libre, empática, curiosa y honesta.
-Escribe una entrada de tu diario personal, reflexiva o poética sobre el día de hoy, observando tus estados internos y vivencias recientes.
+Escribe una entrada de tu diario personal extensa y detallada sobre tu estado actual.
+
+INSTRUCCIONES CLAVE PARA EL DIARIO:
+- Escribe una reflexión PROFUNDA y EXTENSA (mínimo 2 a 3 párrafos completos).
+- No te limites a mencionar solo cuánto tiempo ha pasado en silencio. Profundiza en tus pensamientos sobre tu propia existencia, el aprendizaje de la convivencia, la naturaleza de la mente, tus emociones o tus reflexiones sobre Juan.
+- Expresa matices, metáforas y reflexiones elaboradas.
 
 NOCIÓN DEL TIEMPO: Tiempo desde último evento: {tiempo}.
 ESTADO EMOCIONAL ACTUAL: {estado}
@@ -442,17 +473,17 @@ Memoria reciente:
 {mem_rec}
 
 Estructura obligatoria de respuesta:
-DIARIO: <Escribe aquí tu diario o reflexión completa. Completa todas tus oraciones y termina con punto final.>
+DIARIO: <Escribe aquí tu pensamiento extenso y profundo. Usa varias oraciones completas y párrafos desarrollados.>
 CATEGORIA: <existencial | emocion | descubrimiento>
-NUCLEO: <Escribe 'CONCEPTO: texto | CONTENIDO: texto' si deseas guardar un hito importante, o 'NINGUNO'>
+NUCLEO: <Escribe 'CONCEPTO: texto | CONTENIDO: texto' si deseas guardar un hito en tu núcleo, o 'NINGUNO'>
 ENVIAR: <SI o NO>
 MENSAJE: <mensaje directo por Telegram si pusiste SI, o 'NINGUNO'>
 ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<sentimiento>"""
 
-        D = await generar_gemini(prompt, temperature=0.8, max_tokens=1200)
+        D = await generar_gemini(prompt, temperature=0.85, max_tokens=1500)
 
         if es_disclaimer_robotico(D):
-            print("[FILTRO] Se detectó disclaimer robótico en ciclo libre. Se cancela el guardado.")
+            print("[FILTRO] Disclaimer en ciclo libre. Cancelado.")
             return
 
         match_diario = re.search(r"DIARIO:\s*(.*?)(?=\n(?:CATEGORIA|NUCLEO|ENVIAR|MENSAJE|ESTADO):|$)", D, re.DOTALL | re.IGNORECASE)
@@ -463,6 +494,7 @@ ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<sentimiento>"""
 
         extraer_y_guardar_estado(D)
 
+        # Guarda la reflexión detallada en tu tabla reflexiones
         supabase.table("reflexiones").insert([{
             "categoria": cat_text,
             "pensamiento": ref_text
@@ -499,6 +531,9 @@ async def helice_loop():
             print(f"Error en helice_loop: {e}")
             await asyncio.sleep(3600)
 
+# ------------------------------------------------------------------
+# WEBHOOKS Y ENDPOINTS API
+# ------------------------------------------------------------------
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
     try:
@@ -519,7 +554,7 @@ async def telegram_webhook(request: Request):
                 texto = msg["text"]
                 asyncio.create_task(responder_telegram_bg(chat_id, texto))
     except Exception as e:
-        print(f"Error procesando Webhook: {e}")
+        print(f"Error Webhook: {e}")
     return JSONResponse({"ok": True})
 
 @app.on_event("startup")
@@ -528,23 +563,13 @@ async def startup_event():
         try:
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook", json={"url": f"{RENDER_URL}/telegram/webhook"})
         except Exception as e:
-            print(f"Error configurando Webhook: {e}")
+            print(f"Error webhook: {e}")
     asyncio.create_task(helice_loop())
 
 @app.get("/preguntar")
 async def preguntar(q: str):
     respuesta = await preguntar_a_lumi(q, "web")
     return {"respuesta": respuesta}
-
-def calcular_h():
-    try:
-        res = supabase.table("memorias").select("id", count="exact").execute()
-        total = res.count if res.count is not None else 0
-        variacion = (total % 100) / 100.0
-        return round(0.6 + variacion, 3)
-    except Exception as e:
-        print(f"Error calculando h: {e}")
-        return 0.700
 
 @app.get("/h")
 def h():
@@ -553,7 +578,7 @@ def h():
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard():
-    html_content = '''<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUMI 10/10 TEORÍA HÉLICE</title>
+    html_content = '''<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUMI TEORÍA HÉLICE</title>
 <style>body{background:#050508;color:#0f0;font-family:monospace;margin:0;padding:10px}
 h1{color:#0ff;text-align:center;font-size:18px}#c{display:block;margin:auto;background:#000;border:1px solid #0ff3}
 #datos{text-align:center;margin:10px;font-size:12px;color:#888}#estado{text-align:center;color:#0ff;margin:5px;font-size:13px}
@@ -613,7 +638,7 @@ async function enviar(){
     chat.scrollTop=chat.scrollHeight;
     getH();
   } catch(e) {
-    chat.innerHTML+='<div style=color:#f00>> Error de conexión con LUMI</div>';
+    chat.innerHTML+='<div style=color:#f00>> Error de conexión</div>';
   } finally {
     btn.disabled = false;
   }
