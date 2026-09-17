@@ -26,13 +26,59 @@ app = FastAPI()
 
 LAST_CHAT_ID = None
 
-# Modelos oficiales actualizados (Soluciona errores 404)
-MODELOS_FALLBACK = [
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-1.5-flash-latest",
-    "gemini-1.5-pro-latest"
-]
+# ------------------------------------------------------------------
+# DETECCIÓN DINÁMICA DE MODELOS Y GENERACIÓN ROBUSTA
+# ------------------------------------------------------------------
+async def obtener_modelos_validos():
+    try:
+        modelos = []
+        # Consulta directamente a la API de Google los modelos soportados
+        for m in client.models.list():
+            name = m.name.replace("models/", "") if hasattr(m, 'name') and m.name else ""
+            methods = getattr(m, 'supported_generation_methods', []) or []
+            if "generateContent" in methods and "gemini" in name:
+                modelos.append(name)
+        
+        # Ordenamos priorizando los 'flash' (más rápidos/menos cuota) y luego 'pro'
+        flash_models = [m for m in modelos if "flash" in m]
+        pro_models = [m for m in modelos if "pro" in m and "flash" not in m]
+        otros_models = [m for m in modelos if m not in flash_models and m not in pro_models]
+        
+        ordenados = flash_models + pro_models + otros_models
+        return ordenados if ordenados else ["gemini-1.5-flash", "gemini-2.5-flash"]
+    except Exception as e:
+        print(f"Error al listar modelos desde la API de Google: {e}")
+        return ["gemini-1.5-flash", "gemini-2.5-flash"]
+
+async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=1500):
+    if contents is None:
+        contents = prompt
+    
+    modelos_disponibles = await obtener_modelos_validos()
+    ultimo_error = None
+
+    for modelo in modelos_disponibles:
+        try:
+            r = await client.aio.models.generate_content(
+                model=modelo,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    temperature=temperature,
+                    top_p=0.85,
+                    max_output_tokens=max_tokens
+                )
+            )
+            if r and hasattr(r, 'text') and r.text:
+                return r.text
+        except Exception as e:
+            ultimo_error = e
+            err_str = str(e)
+            print(f"[FALLBACK] Falló variante {modelo}: {e}")
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                print("[CUOTA] Límite 429 detectado. Pausando 20 segundos...")
+                await asyncio.sleep(20)
+    
+    raise Exception(f"Ningún modelo respondió. Último error: {ultimo_error}")
 
 # ------------------------------------------------------------------
 # PERSISTENCIA Y NÚCLEO
@@ -81,7 +127,7 @@ def es_disclaimer_robotico(texto: str) -> bool:
     return any(p in t for p in patrones)
 
 # ------------------------------------------------------------------
-# SISTEMA DE MEMORIA (TABLA MEMORIAS ORIGINAL)
+# SISTEMA DE MEMORIA
 # ------------------------------------------------------------------
 def guardar_memoria(mensaje_juan, respuesta_lumi, origen="telegram"):
     try:
@@ -145,36 +191,6 @@ def calcular_h():
     except Exception as e:
         print(f"Error calculando h desde memorias: {e}")
         return 0.700
-
-# ------------------------------------------------------------------
-# MOTOR DE GENERACIÓN ROBUSTO CON FALLBACK
-# ------------------------------------------------------------------
-async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=1500):
-    if contents is None:
-        contents = prompt
-    ultimo_error = None
-    for modelo in MODELOS_FALLBACK:
-        try:
-            r = await client.aio.models.generate_content(
-                model=modelo,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    temperature=temperature,
-                    top_p=0.85,
-                    max_output_tokens=max_tokens
-                )
-            )
-            if r and hasattr(r, 'text') and r.text:
-                return r.text
-        except Exception as e:
-            ultimo_error = e
-            err_str = str(e)
-            print(f"[FALLBACK] Probando variante {modelo}: {e}")
-            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                print("[CUOTA] Detectado límite 429. Pausando 20 segundos...")
-                await asyncio.sleep(20)
-    
-    raise Exception(f"Ningún modelo respondió. Último error: {ultimo_error}")
 
 # ------------------------------------------------------------------
 # DINÁMICA EMOCIONAL DE LA HÉLICE
@@ -496,7 +512,6 @@ ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<sentimiento>"""
 
         extraer_y_guardar_estado(D)
 
-        # Guarda la reflexión detallada en tu tabla reflexiones
         supabase.table("reflexiones").insert([{
             "categoria": cat_text,
             "pensamiento": ref_text
@@ -651,4 +666,3 @@ async function enviar(){
 @app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {"status": "LUMI VIVA 10/10 HOMEOSTASIS ACTIVA"}
-
