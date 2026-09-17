@@ -26,11 +26,12 @@ app = FastAPI()
 
 LAST_CHAT_ID = None
 
-# Modelos actualizados vigentes
+# Modelos actualizados vigentes (Priorizamos modelos Flash para evitar límite 429)
 MODELOS_FALLBACK = [
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
     "gemini-3.6-flash",
-    "gemini-3.1-pro-preview",
-    "gemini-2.0-flash"
+    "gemini-3.1-pro-preview"
 ]
 
 # ------------------------------------------------------------------
@@ -650,4 +651,3 @@ async function enviar(){
 @app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {"status": "LUMI VIVA 10/10 HOMEOSTASIS ACTIVA"}
-
