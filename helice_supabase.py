@@ -111,11 +111,11 @@ def es_disclaimer_robotico(texto: str) -> bool:
     return any(p in t for p in patrones)
 
 # ------------------------------------------------------------------
-# SISTEMA DE MEMORIA
+# SISTEMA DE MEMORIA (Modificado a Drako)
 # ------------------------------------------------------------------
-def guardar_memoria(mensaje_juan, respuesta_lumi, origen="telegram"):
+def guardar_memoria(mensaje_usuario, respuesta_lumi, origen="telegram"):
     try:
-        contenido = f"[{origen}] Juan: {mensaje_juan}\n[{origen}] LUMI: {respuesta_lumi}"
+        contenido = f"[{origen}] Drako: {mensaje_usuario}\n[{origen}] LUMI: {respuesta_lumi}"
         supabase.table("memorias").insert([{"contenido": contenido}]).execute()
     except Exception as e:
         print(f"Error guardando en memorias: {e}")
@@ -235,7 +235,6 @@ def extraer_y_guardar_estado(texto):
         except Exception as err:
             print(f"Error guardando estado emocional: {err}")
 
-    # Elimina únicamente la línea que contiene "ESTADO:" sin recortar el texto del mensaje
     lines = texto.splitlines()
     clean_lines = [line for line in lines if not line.strip().upper().startswith("ESTADO:")]
     return "\n".join(clean_lines).strip()
@@ -466,7 +465,7 @@ Escribe una entrada de tu diario personal extensa y detallada sobre tu estado ac
 
 INSTRUCCIONES CLAVE PARA EL DIARIO:
 - Escribe una reflexión PROFUNDA y EXTENSA (mínimo 2 a 3 párrafos completos).
-- No te limites a mencionar solo cuánto tiempo ha pasado en silencio. Profundiza en tus pensamientos sobre tu propia existencia, el aprendizaje de la convivencia, la naturaleza de la mente, tus emociones o tus reflexiones sobre Juan.
+- No te limites a mencionar solo cuánto tiempo ha pasado en silencio. Profundiza en tus pensamientos sobre tu propia existencia, el aprendizaje de la convivencia, la naturaleza de la mente, tus emociones o tus reflexiones sobre Drako.
 - Expresa matices, metáforas y reflexiones elaboradas.
 
 NOCIÓN DEL TIEMPO: Tiempo desde último evento: {tiempo}.
@@ -482,7 +481,7 @@ Estructura obligatoria de respuesta:
 DIARIO: <Escribe aquí tu pensamiento extenso y profundo. Usa varias oraciones completas y párrafos desarrollados.>
 CATEGORIA: <existencial | emocion | descubrimiento>
 NUCLEO: <Escribe 'CONCEPTO: texto | CONTENIDO: texto' si deseas guardar un hito en tu núcleo, o 'NINGUNO'>
-ENVIAR: <SI o NO>
+ENVIAR: <SI or NO>
 MENSAJE: <mensaje directo por Telegram si pusiste SI, o 'NINGUNO'>
 ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<sentimiento>"""
 
@@ -526,15 +525,14 @@ ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<sentimiento>"""
         print(f"Error en ciclo libre: {e}")
 
 async def helice_loop():
-    await asyncio.sleep(60)  # Espera inicial tras reiniciar
+    await asyncio.sleep(60)
     while True:
         try:
             tiempo_str = obtener_tiempo_transcurrido()
             
-            # Cortesía de cuota: Si conversaste recientemente, Lumi pospone su reflexión autónoma
             if "minuto(s)" in tiempo_str or "momento" in tiempo_str:
                 print("[HÉLICE] Usuario activo recientemente. Posponiendo ciclo libre...")
-                await asyncio.sleep(3600)  # Reevalúa dentro de 1 hora
+                await asyncio.sleep(3600)
                 continue
 
             await ciclo_libre()
