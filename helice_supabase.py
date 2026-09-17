@@ -60,8 +60,8 @@ async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=1500
             err_str = str(e)
             print(f"[FALLBACK] Falló modelo {modelo}: {e}")
             if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                print("[CUOTA] Límite 429 detectado. Pausando 10 segundos...")
-                await asyncio.sleep(10)
+                print("[CUOTA] Límite 429 detectado. Pausando 60 segundos...")
+                await asyncio.sleep(60)
     
     raise Exception(f"Ningún modelo respondió. Último error: {ultimo_error}")
 
