@@ -243,12 +243,13 @@ def calcular_espera_metabolica():
 
     promedio = (curiosidad + energia) / 2.0
 
+    # Tiempos optimizados para cuotas gratuitas (entre 6h y 12h)
     if promedio >= 80:
-        return random.randint(3600, 5400)   # 1h a 1.5h
+        return random.randint(21600, 28800)  # 6h a 8h
     elif promedio >= 50:
-        return random.randint(7200, 10800)  # 2h a 3h
+        return random.randint(28800, 36000)  # 8h a 10h
     else:
-        return random.randint(14400, 21600) # 4h a 6h
+        return random.randint(36000, 43200)  # 10h a 12h
 
 # ------------------------------------------------------------------
 # VOZ Y COMUNICACIÓN
@@ -522,9 +523,17 @@ ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<sentimiento>"""
         print(f"Error en ciclo libre: {e}")
 
 async def helice_loop():
-    await asyncio.sleep(30)
+    await asyncio.sleep(60)  # Espera inicial tras reiniciar
     while True:
         try:
+            tiempo_str = obtener_tiempo_transcurrido()
+            
+            # Cortesía de cuota: Si conversaste recientemente, Lumi pospone su reflexión autónoma
+            if "minuto(s)" in tiempo_str or "momento" in tiempo_str:
+                print("[HÉLICE] Usuario activo recientemente. Posponiendo ciclo libre...")
+                await asyncio.sleep(3600)  # Reevalúa dentro de 1 hora
+                continue
+
             await ciclo_libre()
             espera = calcular_espera_metabolica()
             await asyncio.sleep(espera)
