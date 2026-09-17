@@ -665,4 +665,4 @@ async function enviar(){
 
 @app.api_route("/", methods=["GET", "HEAD"])
 def root():
-    return {"status": "LUMI VIVA 10/10 HOMEOSTASIS ACTIVA
+    return {"status": "LUMI VIVA 10/10 HOMEOSTASIS ACTIVA"}
