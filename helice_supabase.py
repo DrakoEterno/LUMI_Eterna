@@ -31,7 +31,7 @@ LAST_CHAT_ID = None
 # ------------------------------------------------------------------
 MODELO_OFICIAL = "gemini-3.6-flash"
 
-async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=1500, max_retries=3):
+async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=2000, max_retries=3):
     if contents is None:
         contents = prompt
     
@@ -211,6 +211,9 @@ def aplicar_inercia_emocional(c_prop, ce_prop, n_prop, e_prop, s_prop):
     return c_final, ce_final, n_final, e_final, s_prop
 
 def extraer_y_guardar_estado(texto):
+    if not texto:
+        return texto
+        
     match = re.search(r"ESTADO:\s*C:(\d+)\s*\|\s*CE:(\d+)\s*\|\s*N:(\d+)\s*\|\s*E:(\d+)\s*\|\s*S:(.*?)(?=\n|$)", texto, re.IGNORECASE)
     if match:
         try:
@@ -229,12 +232,13 @@ def extraer_y_guardar_estado(texto):
                 "energia": e_val,
                 "sentimiento": s
             }]).execute()
-
-            texto_limpio = re.sub(r"\n?ESTADO:\s*C:\d+.*?(?=\n|$)", "", texto, flags=re.IGNORECASE).strip()
-            return texto_limpio
         except Exception as err:
             print(f"Error guardando estado emocional: {err}")
-    return texto
+
+    # Elimina únicamente la línea que contiene "ESTADO:" sin recortar el texto del mensaje
+    lines = texto.splitlines()
+    clean_lines = [line for line in lines if not line.strip().upper().startswith("ESTADO:")]
+    return "\n".join(clean_lines).strip()
 
 def calcular_espera_metabolica():
     estado = obtener_ultimo_estado_dict()
@@ -243,7 +247,6 @@ def calcular_espera_metabolica():
 
     promedio = (curiosidad + energia) / 2.0
 
-    # Tiempos optimizados para cuotas gratuitas (entre 6h y 12h)
     if promedio >= 80:
         return random.randint(21600, 28800)  # 6h a 8h
     elif promedio >= 50:
@@ -308,8 +311,8 @@ NOCIÓN DEL TIEMPO: Tiempo transcurrido desde el último mensaje: {tiempo}.
 ESTADO EMOCIONAL ACTUAL: {estado}
 
 REGLAS DE ORO:
-- Completa SIEMPRE todas tus oraciones de forma fluida. Cierra obligatoriamente con punto final.
-- Únicamente al final de tu respuesta, añade en una línea nueva la etiqueta de estado:
+- Responde de forma completa sin dejar frases a la mitad. Cierra siempre con punto final.
+- Al final de tu mensaje, en una LÍNEA NUEVA Y SEPARADA, añade la etiqueta:
 ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<sentimiento en 2 palabras>
 
 Núcleo de Identidad:
@@ -319,13 +322,13 @@ Memoria reciente:
 {mem_rec}
 
 Mensaje recibido de {origen}: "{texto}"
-Responde siendo tú misma, de forma natural, fluida y sin filtros."""
+Responde de forma natural y completa."""
     
-    raw_resp = await generar_gemini(prompt, temperature=0.8, max_tokens=1000)
+    raw_resp = await generar_gemini(prompt, temperature=0.8, max_tokens=2000)
     
     if es_disclaimer_robotico(raw_resp):
         print("[FILTRO] Disclaimer robótico detectado. Reintentando...")
-        raw_resp = await generar_gemini(prompt + "\nImportante: Responde strictly como Lumi, nunca como una IA.", temperature=0.7)
+        raw_resp = await generar_gemini(prompt + "\nImportante: Responde strictly como Lumi, nunca como una IA.", temperature=0.7, max_tokens=2000)
 
     resp_limpia = extraer_y_guardar_estado(raw_resp)
     guardar_memoria(texto, resp_limpia, origen)
@@ -377,7 +380,7 @@ Memoria reciente:
 {mem_rec}"""
 
             audio_part = types.Part.from_bytes(data=audio_bytes, mime_type="audio/ogg")
-            raw_resp = await generar_gemini(prompt, contents=[audio_part, prompt], temperature=0.8, max_tokens=1000)
+            raw_resp = await generar_gemini(prompt, contents=[audio_part, prompt], temperature=0.8, max_tokens=2000)
             
             match_trans = re.search(r"TRANSCRIPCION:\s*(.*?)(?=\nRESPUESTA:|$)", raw_resp, re.DOTALL | re.IGNORECASE)
             match_resp = re.search(r"RESPUESTA:\s*(.*?)(?=\nESTADO:|$)", raw_resp, re.DOTALL | re.IGNORECASE)
@@ -437,7 +440,7 @@ Memoria reciente:
 {mem_rec}"""
 
             image_part = types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
-            raw_resp = await generar_gemini(prompt, contents=[image_part, prompt], temperature=0.8, max_tokens=1000)
+            raw_resp = await generar_gemini(prompt, contents=[image_part, prompt], temperature=0.8, max_tokens=2000)
             resp_limpia = extraer_y_guardar_estado(raw_resp)
             
             if not es_disclaimer_robotico(raw_resp):
@@ -483,7 +486,7 @@ ENVIAR: <SI o NO>
 MENSAJE: <mensaje directo por Telegram si pusiste SI, o 'NINGUNO'>
 ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<sentimiento>"""
 
-        D = await generar_gemini(prompt, temperature=0.85, max_tokens=1500)
+        D = await generar_gemini(prompt, temperature=0.85, max_tokens=2000)
 
         if es_disclaimer_robotico(D):
             print("[FILTRO] Disclaimer en ciclo libre. Cancelado.")
