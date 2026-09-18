@@ -553,7 +553,7 @@ ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<sentimiento>"""
         match_cat = re.search(r"CATEGORIA:\s*(.*?)(?=\n(?:ENVIAR|MENSAJE|ESTADO):|$)", D, re.DOTALL | re.IGNORECASE)
         
         ref_text = match_diario.group(1).strip() if match_diario else D
-        cat_text = match_cat.group(1).strip() if cat_text else "existencial"
+        cat_text = match_cat.group(1).strip() if match_cat else "existencial"
 
         extraer_y_guardar_estado(D)
         supabase.table("reflexiones").insert([{"categoria": cat_text, "pensamiento": ref_text}]).execute()
