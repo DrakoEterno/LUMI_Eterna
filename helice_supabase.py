@@ -50,6 +50,10 @@ async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=2000
             )
             if r and hasattr(r, 'text') and r.text:
                 print(f"[ÉXITO] Respuesta generada con modelo: {MODELO_OFICIAL} (Intento {intento})")
+                
+                # PAUSA PREVENTIVA ANTI-429: Asegura no superar las 5 peticiones por minuto del plan gratuito
+                await asyncio.sleep(12)
+                
                 return r.text
         except Exception as e:
             ultimo_error = e
