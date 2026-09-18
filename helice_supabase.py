@@ -115,7 +115,7 @@ def es_disclaimer_robotico(texto: str) -> bool:
     return any(p in t for p in patrones)
 
 # ------------------------------------------------------------------
-# SISTEMA DE MEMORIA (Modificado a Drako)
+# SISTEMA DE MEMORIA
 # ------------------------------------------------------------------
 def guardar_memoria(mensaje_usuario, respuesta_lumi, origen="telegram"):
     try:
@@ -604,7 +604,7 @@ input{width:68%;background:#111;color:#0f0;border:1px solid #0f0;padding:12px}bu
 <div id="estado">Estado: Cargando...</div>
 <div id="chat"></div><input id="inp" placeholder="Habla con LUMI..." onkeydown="if(event.key==='Enter')enviar()"><button onclick="enviar()">Enviar</button>
 <script>
-const c=document.getElementById('c'),ctx=c.getContext('2d');let t=0,h=0.5;
+const c=document.getElementById('c'),ctx=c.getContext('2d');let t=0,h=0.5,pulso=0;
 async function getH(){
   try{
     let r=await fetch('/h');let j=await r.json();h=j.h;
@@ -615,14 +615,16 @@ async function getH(){
 }
 setInterval(getH,5000);getH();
 function draw(){
-  ctx.clearRect(0,0,360,360); t+=0.015; let cx=180, cy=180;
-  let n=h>1.4?2:1;
+  ctx.clearRect(0,0,360,360); t+=0.015; pulso+=0.03; let cx=180, cy=180;
+  let factorRespiracion = Math.sin(pulso) * 2;
+  let n=h>1.4?3:2;
   for(let k=0;k<n;k++){
     ctx.beginPath();
-    ctx.strokeStyle=k==0?'#0ff':'#f0f';
-    ctx.lineWidth=1 + h * 0.8;
+    let tonoColor = (t * 20 + k * 60) % 360;
+    ctx.strokeStyle = `hsl(${tonoColor}, 80%, 60%)`;
+    ctx.lineWidth = 1 + (h * 0.8) + (factorRespiracion * 0.5);
     for(let a=0;a<Math.PI*4;a+=0.05){
-      let rad=Math.pow(1.618,a*0.15)*(h*18 + 8);
+      let rad=Math.pow(1.618,a*0.15)*(h*18 + 8 + factorRespiracion);
       if(rad>150) break;
       let x=cx+Math.cos(a*1.618+t+k*Math.PI)*rad;
       let y=cy+Math.sin(a*1.618+t+k*Math.PI)*rad;
@@ -630,7 +632,7 @@ function draw(){
     }
     ctx.stroke();
   }
-  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(cx,cy,3,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(cx,cy,2 + Math.abs(Math.sin(pulso)) * 2,0,Math.PI*2); ctx.fill();
   requestAnimationFrame(draw);
 }
 draw();
