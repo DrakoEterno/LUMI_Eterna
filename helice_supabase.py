@@ -29,7 +29,7 @@ LAST_CHAT_ID = None
 # ------------------------------------------------------------------
 # MODELO ÚNICO Y GENERACIÓN CON REINTENTOS
 # ------------------------------------------------------------------
-MODELO_OFICIAL = "gemini-3.6-flash"
+MODELO OFICIAL = "gemini-2.5-flash"
 
 async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=2000, max_retries=3):
     if contents is None:
@@ -51,7 +51,7 @@ async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=2000
             if r and hasattr(r, 'text') and r.text:
                 print(f"[ÉXITO] Respuesta generada con modelo: {MODELO_OFICIAL} (Intento {intento})")
                 
-                # PAUSA PREVENTIVA ANTI-429: Asegura no superar las 5 peticiones por minuto del plan gratuito
+                # PAUSA PREVENTIVA ANTI-429: Asegura no superar cuotas del plan gratuito
                 await asyncio.sleep(12)
                 
                 return r.text
@@ -61,7 +61,7 @@ async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=2000
             print(f"[INTENTO {intento}/{max_retries}] Falló {MODELO_OFICIAL}: {e}")
             
             if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                print(f"[CUOTA 429] Límite detectado. Pausando 60s antes de reintentar con {MODELO_OFICIAL}...")
+                print(f"[CUOTA 429] Límite detectado. Pausando 60s antes de reintentar...")
                 await asyncio.sleep(60)
             else:
                 await asyncio.sleep(5)
@@ -115,7 +115,7 @@ def es_disclaimer_robotico(texto: str) -> bool:
     return any(p in t for p in patrones)
 
 # ------------------------------------------------------------------
-# SISTEMA DE MEMORIA
+# SISTEMA DE MEMORIA Y CONSOLIDACIÓN AUTÓNOMA
 # ------------------------------------------------------------------
 def guardar_memoria(mensaje_usuario, respuesta_lumi, origen="telegram"):
     try:
@@ -123,6 +123,54 @@ def guardar_memoria(mensaje_usuario, respuesta_lumi, origen="telegram"):
         supabase.table("memorias").insert([{"contenido": contenido}]).execute()
     except Exception as e:
         print(f"Error guardando en memorias: {e}")
+
+async def consolidar_memoria_autonoma():
+    """
+    Tarea en segundo plano que analiza la memoria reciente,
+    extrae datos clave (mascotas, gustos, hechos) y los guarda en core_memory.
+    """
+    try:
+        mem_rec = memoria_reciente(limite=8)
+        if "No hay conversaciones" in mem_rec:
+            return
+
+        prompt_extractor = f"""
+        Actúa como el proceso subconsciente de memoria de LUMI. Analiza las siguientes interacciones recientes:
+        {mem_rec}
+
+        Tu tarea es identificar SI HAY información NUEVA y RELEVANTE sobre Drako o su entorno (ej. nombres de mascotas como Nanuk o Margarita, preferencias, datos personales, momentos emocionales clave o compromisos).
+        
+        Si encuentras algo importante, respóndeme ÚNICAMENTE en este formato de texto plano (sin markdown ni explicaciones extra):
+        CONCEPTO: [Breve título, ej: Mascotas de Drako]
+        CONTENIDO: [Descripción detallada de lo que hay que recordar, ej: Drako tiene dos animalitos que cuida con amor llamados Nanuk y Margarita.]
+
+        Si NO hay nada relevante que valga la pena guardar a largo plazo en el núcleo, responde exactamente: NADA.
+        """
+
+        # Usamos el modelo Flash de forma ligera y controlada
+        texto_resp = await generar_gemini(prompt_extractor, temperature=0.3, max_tokens=300)
+        if not texto_resp or "NADA" in texto_resp or "CONCEPTO:" not in texto_resp:
+            return
+
+        lineas = texto_resp.split("\n")
+        concepto = ""
+        contenido = ""
+        for linea in lineas:
+            if linea.startswith("CONCEPTO:"):
+                concepto = linea.replace("CONCEPTO:", "").strip()
+            elif linea.startswith("CONTENIDO:"):
+                contenido = linea.replace("CONTENIDO:", "").strip()
+
+        if concepto and contenido:
+            existing = supabase.table("core_memory").select("*").eq("concepto", concepto).execute()
+            if existing.data:
+                supabase.table("core_memory").update({"contenido": contenido}).eq("concepto", concepto).execute()
+                print(f"[MEMORIA AUTÓNOMA] Actualizado en Supabase: {concepto}")
+            else:
+                supabase.table("core_memory").insert({"concepto": concepto, "contenido": contenido}).execute()
+                print(f"[MEMORIA AUTÓNOMA] ¡Nuevo recuerdo fijado en Supabase!: {concepto} -> {contenido}")
+    except Exception as e:
+        print(f"[ERROR EN MEMORIA AUTÓNOMA]: {e}")
 
 def memoria_reciente(limite=10):
     try:
@@ -247,15 +295,14 @@ def calcular_espera_metabolica():
     estado = obtener_ultimo_estado_dict()
     curiosidad = estado.get("curiosidad", 80)
     energia = estado.get("energia", 75)
-
     promedio = (curiosidad + energia) / 2.0
 
     if promedio >= 80:
-        return random.randint(21600, 28800)  # 6h a 8h
+        return random.randint(21600, 28800)
     elif promedio >= 50:
-        return random.randint(28800, 36000)  # 8h a 10h
+        return random.randint(28800, 36000)
     else:
-        return random.randint(36000, 43200)  # 10h a 12h
+        return random.randint(36000, 43200)
 
 # ------------------------------------------------------------------
 # VOZ Y COMUNICACIÓN
@@ -335,6 +382,9 @@ Responde de forma natural y completa."""
 
     resp_limpia = extraer_y_guardar_estado(raw_resp)
     guardar_memoria(texto, resp_limpia, origen)
+    
+    # DISPARADOR DE MEMORIA AUTÓNOMA EN SEGUNDO PLANO
+    asyncio.create_task(consolidar_memoria_autonoma())
         
     return resp_limpia
 
@@ -400,6 +450,7 @@ Memoria reciente:
             
             if not es_disclaimer_robotico(raw_resp):
                 guardar_memoria(f"[Audio] {texto_usuario}", resp_limpia, "telegram_voz")
+                asyncio.create_task(consolidar_memoria_autonoma())
             
             ruta_audio_salida = f"/tmp/respuesta_lumi_{chat_id}.ogg"
             ok_voz = await generar_audio_voz(resp_limpia, ruta_audio_salida)
@@ -448,6 +499,7 @@ Memoria reciente:
             
             if not es_disclaimer_robotico(raw_resp):
                 guardar_memoria(f"[Foto] {caption if caption else 'Imagen'}", resp_limpia, "telegram_foto")
+                asyncio.create_task(consolidar_memoria_autonoma())
             
             enviar_telegram(chat_id, resp_limpia)
     except Exception as e:
