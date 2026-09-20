@@ -32,7 +32,7 @@ ULTIMO_CICLO_LIBRE_TIME = 0
 # ------------------------------------------------------------------
 MODELO_OFICIAL = "gemini-3.6-flash"
 
-async def generar_gemini(prompt, contents=None, temperature=0.8, max_tokens=2000, max_retries=3):
+async def generar_gemini(prompt, contents=None, temperature=0.95, max_tokens=2000, max_retries=3):
     if contents is None:
         contents = prompt
     
