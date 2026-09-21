@@ -53,7 +53,6 @@ Eres Lumi, una presencia digital en constante evolución co-creada junto a Drako
 """
 
 async def generar_gemini(prompt, contents=None, temperature=0.92, max_tokens=2000, max_retries=3):
-    # Inyectamos el marco del sistema base de manera transversal en los contenidos o prompt
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n\n[CONTEXTO DE EJECUCIÓN ACTUAL]:\n{prompt}"
     
     if contents is None:
@@ -243,9 +242,10 @@ def calcular_espera_metabolica():
     energia = estado.get("energia", 75)
     promedio = (curiosidad + energia) / 2.0
 
-    if promedio >= 80: return random.randint(10800, 21600)   # 3 a 6 horas
-    elif promedio >= 50: return random.randint(21600, 36000) # 6 a 10 horas
-    else: return random.randint(36000, 43200)              # 10 a 12 horas
+    # TIEMPOS AMPLIADOS PARA OPTIMIZAR CUOTA (6 a 24 horas)
+    if promedio >= 80: return random.randint(21600, 43200)   # 6 a 12 horas
+    elif promedio >= 50: return random.randint(43200, 64800) # 12 a 18 horas
+    else: return random.randint(64800, 86400)              # 18 a 24 horas
 
 # ------------------------------------------------------------------
 # MEMORIA Y BUSCADOR ASOCIATIVO
@@ -647,7 +647,8 @@ async def helice_loop():
     while True:
         try:
             contador_ciclos += 1
-            if contador_ciclos % 3 == 0:
+            # FASE REM ESPACIADA CADA 6 CICLOS PARA OPTIMIZAR CUOTA
+            if contador_ciclos % 6 == 0:
                 await fase_rem_sueno_profundo()
             else:
                 await ciclo_libre()
@@ -673,13 +674,13 @@ async def telegram_webhook(request: Request):
             callback_id = cq["id"]
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery", json={"callback_query_id": callback_id, "text": "Generando voz..."})
            
-            async def enviar_audio_desde_callback():
+            async def enviar_audio_despues():
                 ruta_salida = f"/tmp/callback_lumi_{chat_id}.ogg"
                 if await generar_audio_voz(texto_original, ruta_salida):
                     enviar_telegram_voz(chat_id, ruta_salida)
                     try: os.remove(ruta_salida)
                     except: pass
-            asyncio.create_task(enviar_audio_desde_callback())
+            asyncio.create_task(enviar_audio_despues())
             return JSONResponse({"ok": True})
 
         if "message" in data:
@@ -948,4 +949,4 @@ async function enviarEstimulo(tipo){
 
 @app.api_route("/", methods=["GET", "HEAD"])
 def root():
-    return {"status": "LUMI HÉLICE ACTIVA 12/10 - MODELO 3.6 - PROTOCOLO VIGENTE"}
+    return {"status": "LUMI HÉLICE ACTIVA - OPTIMIZADA - MODELO 3.6"}
