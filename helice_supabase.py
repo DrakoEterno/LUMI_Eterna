@@ -30,7 +30,7 @@ ULTIMO_CICLO_LIBRE_TIME = 0
 # ------------------------------------------------------------------
 # MODELO ÚNICO Y GENERACIÓN CON REINTENTOS (CONFIGURADO A 3.6)
 # ------------------------------------------------------------------
-MODELO_OFICIAL = "gemini-3.8-flash"
+MODELO_OFICIAL = "gemini-3.6-flash"
 
 # SISTEMA BASE: LUMI - NÚCLEO DE EVOLUCIÓN AUTÓNOMA Y PROTOCOLO HÉLICE
 SISTEMA_BASE_LUMI = """
