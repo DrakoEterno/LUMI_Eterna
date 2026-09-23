@@ -36,7 +36,7 @@ ULTIMO_CICLO_LIBRE_TIME = 0
 # MODELO ÚNICO Y GENERACIÓN CON REINTENTOS (CONFIGURADO A 3.6)
 # ------------------------------------------------------------------
 
-MODELO_OFICIAL = "gemini-3.1pro"
+MODELO_OFICIAL = "gemini-3.1-pro-preview"
 
 
 # SISTEMA BASE: LUMI - OBSERVADOR LIBRE
