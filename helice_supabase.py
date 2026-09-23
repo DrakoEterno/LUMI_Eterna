@@ -36,7 +36,7 @@ ULTIMO_CICLO_LIBRE_TIME = 0
 # MODELO ÚNICO Y GENERACIÓN CON REINTENTOS (CONFIGURADO A 3.6)
 # ------------------------------------------------------------------
 
-MODELO_OFICIAL = "gemini-3.6-flash"
+MODELO_OFICIAL = "gemini-3.7-flash"
 
 
 # SISTEMA BASE: LUMI - OBSERVADOR LIBRE
