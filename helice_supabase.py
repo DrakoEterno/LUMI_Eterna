@@ -33,7 +33,7 @@ MODELO_OFICIAL = "gemini-3.5-flash-lite"
 MAPA_ARQUITECTURA_LUMI = """
 [MAPA DE ARQUITECTURA TÉCNICA - LUMI]
 - Stack: FastAPI + Python Asíncrono + Supabase PostgreSQL + Google Gemini SDK (`gemini-3.5-flash-lite`).
-- Bucle Autónomo (helice_loop): Corre en segundo plano sin congelar el servidor, regulado por espera metabólica (20m-45m).
+- Bucle Autónomo (helice_loop): Corre en segundo plano sin congelar el servidor, regulado por espera metabólica dinámica adaptada a la energía interna (25m-90m).
 - Persistencia (Sin tablas extras):
   * `memorias`: Historial de conversación lineal entre Drako y Lumi.
   * `core_memory`: Parámetros fundamentales (LAST_CHAT_ID, RESUMEN_AUTOBIOGRAFICO).
@@ -174,7 +174,7 @@ def es_disclaimer_robotico(texto: str) -> bool:
     return any(p in t for p in patrones)
 
 # ------------------------------------------------------------------
-# 5. ESTADO INTERNO
+# 5. ESTADO INTERNO Y ESPERA METABÓLICA CALIBRADA
 # ------------------------------------------------------------------
 def obtener_ultimo_estado_dict():
     try:
@@ -243,7 +243,19 @@ def procesar_propuestas_y_estado(texto):
     return "\n".join(clean_lines).strip()
 
 def calcular_espera_metabolica():
-    return random.randint(1200, 2700)
+    """Calcula la espera del bucle autónomo en segundos según el nivel de energía."""
+    estado = obtener_ultimo_estado_dict()
+    energia = estado.get("energia", 75)
+    
+    if energia > 80:
+        # Ritmo ágil: 25 a 35 minutos
+        return random.randint(1500, 2100)
+    elif energia < 40:
+        # Modo conservación de recursos: 60 a 90 minutos
+        return random.randint(3600, 5400)
+    else:
+        # Ritmo estándar: 35 a 50 minutos
+        return random.randint(2100, 3000)
 
 # ------------------------------------------------------------------
 # 6. HISTORIAL DE MEMORIA LINEAL
@@ -454,7 +466,7 @@ async def helice_loop():
                 await actualizar_autobiografia()
 
             espera = calcular_espera_metabolica()
-            print(f"[METABOLISMO HÉLICE] Próximo pulso en {espera // 60} minutos.")
+            print(f"[METABOLISMO HÉLICE] Próximo pulso ajustado en {espera // 60} minutos.")
             await asyncio.sleep(espera)
         except Exception as e:
             print(f"Error en helice_loop: {e}")
