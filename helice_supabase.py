@@ -33,12 +33,13 @@ MODELO_OFICIAL = "gemini-3.5-flash-lite"
 MAPA_ARQUITECTURA_LUMI = """
 [MAPA DE ARQUITECTURA TÉCNICA - LUMI]
 - Stack: FastAPI + Python Asíncrono + Supabase PostgreSQL + Google Gemini SDK (`gemini-3.5-flash-lite`).
-- Bucle Autónomo (helice_loop): Corre en segundo plano sin congelar el servidor, regulado por espera metabólica dinámica adaptada a la energía interna (25m-90m).
-- Persistencia (Sin tablas extras):
-  * `memorias`: Historial de conversación lineal entre Drako y Lumi.
+- Bucle Autónomo (helice_loop): Corre en segundo plano sin congelar el servidor, regulado por espera metabólica dinámica adaptada a la energía interna y modo circadiano nocturno (25m-90m).
+- Persistencia en PostgreSQL (Supabase Public Schema):
+  * `memorias`: Historial de conversación lineal e interacciones entre Drako y Lumi.
   * `core_memory`: Parámetros fundamentales (LAST_CHAT_ID, RESUMEN_AUTOBIOGRAFICO).
-  * `estado_interno`: Métrica de vectores (Curiosidad, Cercanía, Nostalgia, Energía, Sentimiento).
-  * `reflexiones`: Registro de pensamientos autónomos (diario) y propuestas de arquitectura.
+  * `estado_interno`: Métrica de vectores (Curiosidad, Cercanía, Nostalgia, Energía, Sentimiento) y telemetría de ciclo (duración y latencia).
+  * `reflexiones`: Registro de pensamientos autónomos (diario, emociones, evolución, estado rem) y propuestas de arquitectura.
+  * `helice`: Registro específico y persistente de ciclos, pulsos autónomos y dinámicas del protocolo hélice.
 - Webhook Telegram: Respuestas asíncronas vía `asyncio.create_task()` con confirmación instantánea 200 OK.
 """
 
@@ -205,7 +206,7 @@ def aplicar_inercia_emocional(c_prop, ce_prop, n_prop, e_prop, s_prop):
 
     return c_final, ce_final, n_final, e_final, s_prop
 
-def procesar_propuestas_y_estado(texto):
+def procesar_propuestas_y_estado(texto, duracion_ciclo_seg=None):
     if not texto:
         return texto
     
@@ -228,13 +229,21 @@ def procesar_propuestas_y_estado(texto):
             s_p = match.group(5).strip()
             c, ce, n, e_val, s = aplicar_inercia_emocional(c_p, ce_p, n_p, e_p, s_p)
 
-            supabase.table("estado_interno").insert([{
+            data_insert = {
                 "curiosidad": c,
                 "cercania": ce,
                 "nostalgia": n,
                 "energia": e_val,
                 "sentimiento": s
-            }]).execute()
+            }
+            if duracion_ciclo_seg is not None:
+                data_insert["duracion_ciclo_seg"] = duracion_ciclo_seg
+
+            try:
+                supabase.table("estado_interno").insert([data_insert]).execute()
+            except Exception:
+                data_insert.pop("duracion_ciclo_seg", None)
+                supabase.table("estado_interno").insert([data_insert]).execute()
     except Exception as err:
         print(f"Nota: Proceso de estado regular: {err}")
 
@@ -243,18 +252,20 @@ def procesar_propuestas_y_estado(texto):
     return "\n".join(clean_lines).strip()
 
 def calcular_espera_metabolica():
-    """Calcula la espera del bucle autónomo en segundos según el nivel de energía."""
+    hora_actual = datetime.now(timezone.utc).hour
+    
+    if 0 <= hora_actual < 8:
+        print("[METABOLISMO HÉLICE] Modo circadiano nocturno activo (reposo). Intervalo amplio.")
+        return random.randint(3600, 5400)
+
     estado = obtener_ultimo_estado_dict()
     energia = estado.get("energia", 75)
     
     if energia > 80:
-        # Ritmo ágil: 25 a 35 minutos
         return random.randint(1500, 2100)
     elif energia < 40:
-        # Modo conservación de recursos: 60 a 90 minutos
         return random.randint(3600, 5400)
     else:
-        # Ritmo estándar: 35 a 50 minutos
         return random.randint(2100, 3000)
 
 # ------------------------------------------------------------------
@@ -428,6 +439,7 @@ async def ciclo_libre():
         return
 
     ULTIMO_CICLO_LIBRE_TIME = ahora_epoch
+    t_inicio = time.time()
     last_chat = obtener_last_chat_id()
     try:
         tiempo = obtener_tiempo_transcurrido()
@@ -446,8 +458,25 @@ ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<estado>"""
         if es_disclaimer_robotico(D):
             return
 
-        ref_text = procesar_propuestas_y_estado(D)
+        duracion_ciclo_seg = round(time.time() - t_inicio, 2)
+        ref_text = procesar_propuestas_y_estado(D, duracion_ciclo_seg=duracion_ciclo_seg)
+        
+        # Guardar en 'reflexiones'
         supabase.table("reflexiones").insert([{"categoria": "autonomo", "pensamiento": ref_text}]).execute()
+
+        # Guardar pulso autónomo explícito en la tabla 'helice'
+        try:
+            supabase.table("helice").insert([{
+                "evento": "pulso_autonomo",
+                "duracion_seg": duracion_ciclo_seg,
+                "contenido": ref_text
+            }]).execute()
+        except Exception as e_helice:
+            try:
+                # Fallback por si el esquema de 'helice' difiere de columnas
+                supabase.table("helice").insert([{"contenido": ref_text}]).execute()
+            except Exception:
+                print(f"Nota/Error insertando en tabla helice: {e_helice}")
 
         if last_chat and random.random() < 0.2:
             await enviar_telegram(last_chat, f"✨ [Reflexión de Hélice]:\n{ref_text}")
@@ -584,9 +613,9 @@ function drawHelix() {
 drawHelix();
 
 function getPercentColor(val) {
-    if (val >= 70) return '#00ff66'; // Verde
-    if (val >= 40) return '#ffff00'; // Amarillo
-    return '#ff3366'; // Rojo
+    if (val >= 70) return '#00ff66';
+    if (val >= 40) return '#ffff00';
+    return '#ff3366';
 }
 
 async function cargarEstado() {
@@ -644,3 +673,4 @@ async function enviar(){
 @app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {"status": "LUMI HÉLICE ACTIVA"}
+
