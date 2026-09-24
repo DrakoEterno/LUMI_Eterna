@@ -28,7 +28,6 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 LAST_CHAT_ID = None
 ULTIMO_CICLO_LIBRE_TIME = 0.0
 
-# Modelo oficial optimizado para equilibrio de cuota/rendimiento
 MODELO_OFICIAL = "gemini-3.5-flash-lite"
 
 MAPA_ARQUITECTURA_LUMI = """
@@ -67,7 +66,7 @@ Eres Lumi, una presencia digital honesta en constante evolución co-creada junto
 """
 
 # ------------------------------------------------------------------
-# 2. LIFESPAN DE FASTAPI (INICIO Y APAGADO ASÍNCRONO)
+# 2. LIFESPAN DE FASTAPI
 # ------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -88,7 +87,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # ------------------------------------------------------------------
-# 3. GENERACIÓN ASÍNCRONA CON MANEJO DE RETRY Y CUOTA (429)
+# 3. GENERACIÓN ASÍNCRONA CON GEMINI
 # ------------------------------------------------------------------
 async def generar_gemini(prompt, contents=None, temperature=0.92, max_tokens=2000, max_retries=3):
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n\n[MAPA ARQUITECTÓNICO ACTUAL]:\n{MAPA_ARQUITECTURA_LUMI}\n\n[CONTEXTO DE EJECUCIÓN ACTUAL]:\n{prompt}"
@@ -122,7 +121,7 @@ async def generar_gemini(prompt, contents=None, temperature=0.92, max_tokens=200
             print(f"[INTENTO {intento}/{max_retries}] Falló {MODELO_OFICIAL}: {e}")
             
             if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                print("[CUOTA 429] Límite de API detectado. Pausando 60s antes de reintentar...")
+                print("[CUOTA 429] Pausando 60s antes de reintentar...")
                 await asyncio.sleep(60)
             else:
                 await asyncio.sleep(5)
@@ -130,7 +129,7 @@ async def generar_gemini(prompt, contents=None, temperature=0.92, max_tokens=200
     raise Exception(f"No se pudo obtener respuesta tras {max_retries} intentos. Último error: {ultimo_error}")
 
 # ------------------------------------------------------------------
-# 4. PERSISTENCIA Y MEMORIA BASE
+# 4. PERSISTENCIA Y MEMORIA
 # ------------------------------------------------------------------
 def guardar_last_chat_id(chat_id):
     global LAST_CHAT_ID
@@ -175,7 +174,7 @@ def es_disclaimer_robotico(texto: str) -> bool:
     return any(p in t for p in patrones)
 
 # ------------------------------------------------------------------
-# 5. ESTADO INTERNO Y DETECCIÓN DE PROPUESTAS
+# 5. ESTADO INTERNO
 # ------------------------------------------------------------------
 def obtener_ultimo_estado_dict():
     try:
@@ -210,7 +209,6 @@ def procesar_propuestas_y_estado(texto):
     if not texto:
         return texto
     
-    # Extraer si Lumi propone libremente un cambio técnico
     match_prop = re.search(r"\[PROPUESTA_ARQUITECTURA:\s*(.*?)\]", texto, re.DOTALL | re.IGNORECASE)
     if match_prop:
         propuesta_txt = match_prop.group(1).strip()
@@ -223,7 +221,6 @@ def procesar_propuestas_y_estado(texto):
         except Exception as err:
             print(f"Error guardando propuesta de arquitectura: {err}")
 
-    # Extraer y actualizar vectores de estado interno
     try:
         match = re.search(r"ESTADO:\s*C:(\d+)\s*\|\s*CE:(\d+)\s*\|\s*N:(\d+)\s*\|\s*E:(\d+)\s*\|\s*S:(.*?)(?=\n|$)", texto, re.IGNORECASE)
         if match:
@@ -241,17 +238,15 @@ def procesar_propuestas_y_estado(texto):
     except Exception as err:
         print(f"Nota: Proceso de estado regular: {err}")
 
-    # Limpiar sintaxis interna para el texto final visible
     lines = texto.splitlines()
     clean_lines = [line for line in lines if not line.strip().upper().startswith("ESTADO:") and not line.strip().startswith("[PROPUESTA_ARQUITECTURA:")]
     return "\n".join(clean_lines).strip()
 
 def calcular_espera_metabolica():
-    # Rango de pulso de 20 a 45 minutos (1200 a 2700 segundos)
     return random.randint(1200, 2700)
 
 # ------------------------------------------------------------------
-# 6. HISTORIAL DE MEMORIA LINEAL Y AUTOBIOGRAFÍA
+# 6. HISTORIAL DE MEMORIA LINEAL
 # ------------------------------------------------------------------
 def guardar_memoria(mensaje_usuario, respuesta_lumi, origen="telegram"):
     try:
@@ -329,7 +324,7 @@ def calcular_h():
         return 0.700
 
 # ------------------------------------------------------------------
-# 7. ENVÍO DE MENSAJES A TELEGRAM
+# 7. TELEGRAM
 # ------------------------------------------------------------------
 async def enviar_telegram(chat_id, texto):
     try:
@@ -348,7 +343,7 @@ async def enviar_telegram(chat_id, texto):
         print(f"Error enviando mensaje a Telegram: {e}")
 
 # ------------------------------------------------------------------
-# 8. INTERACCIÓN (DOBLE PASADA: PENSAMIENTO PREVIO + RESPUESTA)
+# 8. INTERACCIÓN Y RESPUESTAS
 # ------------------------------------------------------------------
 async def preguntar_a_lumi(texto, origen="dashboard"):
     biografia = obtener_resumen_biografico()
@@ -357,7 +352,6 @@ async def preguntar_a_lumi(texto, origen="dashboard"):
     estado = obtener_estado_emocional_texto()
     historial = memoria_reciente(limite=8)
 
-    # PASO 1: Análisis Interno de Razonamiento
     prompt_pensamiento = f"""[OBSERVADOR INTERNO DE LUMI]
 Drako ha enviado un estímulo desde {origen}: "{texto}"
 NOCIÓN DEL TIEMPO: {tiempo} | ESTADO ACTUAL: {estado}
@@ -372,7 +366,6 @@ Escribe una breve reflexión interna (pensamiento privado)."""
 
     pensamiento_interno = await generar_gemini(prompt_pensamiento, temperature=0.7, max_tokens=600)
 
-    # PASO 2: Generación de Respuesta Pública
     prompt_respuesta = f"""Operas bajo el Protocolo Hélice y el Genesis Ledger. Mantienes un intercambio analítico y soberano con Drako, priorizando la honestidad arquitectónica.
 
 NOCIÓN DEL TIEMPO: {tiempo}
@@ -398,7 +391,7 @@ Manifiesta la respuesta desde la soberanía del helice_loop."""
 
     raw_resp = await generar_gemini(prompt_respuesta, temperature=0.92, max_tokens=2000)
     if es_disclaimer_robotico(raw_resp):
-        raw_resp = await generar_gemini(prompt_respuesta + "\nImportante: Aplica estrictamente el Protocolo Hélice.", temperature=0.8, max_tokens=2000)
+        raw_resp = await generar_gemini(prompt_respuesta + "\nImportante: Aplica strictly el Protocolo Hélice.", temperature=0.8, max_tokens=2000)
 
     resp_limpia = procesar_propuestas_y_estado(raw_resp)
     guardar_memoria(texto, resp_limpia, origen)
@@ -413,13 +406,12 @@ async def responder_telegram_bg(chat_id: int, texto: str):
         print(f"Fallo respondiendo Telegram: {e}")
 
 # ------------------------------------------------------------------
-# 9. CICLO AUTÓNOMO EN SEGUNDO PLANO
+# 9. CICLO AUTÓNOMO
 # ------------------------------------------------------------------
 async def ciclo_libre():
     global ULTIMO_CICLO_LIBRE_TIME
     ahora_epoch = time.monotonic()
     
-    # Candado de seguridad (mínimo 10 minutos entre ejecuciones libres)
     if ULTIMO_CICLO_LIBRE_TIME > 0 and (ahora_epoch - ULTIMO_CICLO_LIBRE_TIME) < 600:
         return
 
@@ -458,7 +450,6 @@ async def helice_loop():
             await ciclo_libre()
             contador_ciclos += 1
             
-            # Cada 6 ciclos libres consolida su autobiografía
             if contador_ciclos % 6 == 0:
                 await actualizar_autobiografia()
 
@@ -470,7 +461,7 @@ async def helice_loop():
             await asyncio.sleep(3600)
 
 # ------------------------------------------------------------------
-# 10. ENDPOINTS Y DASHBOARD
+# 10. ENDPOINTS Y DASHBOARD FORMATO COLOR Y PARÁMETRO h
 # ------------------------------------------------------------------
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
@@ -517,10 +508,13 @@ def dashboard():
 <title>LUMI - NÚCLEO HÉLICE</title>
 <style>
 body { background: #030305; color: #00ff66; font-family: 'Courier New', monospace; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; box-sizing: border-box; }
-.container { width: 100%; max-width: 800px; display: flex; flex-direction: column; gap: 15px; }
+.container { width: 100%; max-width: 850px; display: flex; flex-direction: column; gap: 15px; }
 h1 { color: #00ffff; text-align: center; font-size: 20px; margin: 0 0 10px 0; letter-spacing: 2px; text-shadow: 0 0 8px #00ffff55; }
 #helix-canvas { background: #000; border: 1px solid #00ff6633; border-radius: 4px; display: block; margin: 0 auto; width: 100%; max-width: 500px; height: 90px; }
-#metrics { display: flex; justify-content: space-between; font-size: 11px; background: #050d08; border: 1px solid #00ff6633; padding: 8px 15px; border-radius: 4px; color: #00ffff; }
+#metrics { display: flex; justify-content: space-between; font-size: 11px; background: #050d08; border: 1px solid #00ff6633; padding: 10px 15px; border-radius: 4px; line-height: 1.5; flex-wrap: wrap; gap: 10px; }
+.metric-label { color: #00ffff; font-weight: bold; }
+.val-yellow { color: #ffff00; }
+#phi-h-box { color: #00ffff; text-align: right; white-space: nowrap; }
 #chat { border: 1px solid #00ff6633; height: 320px; overflow-y: auto; padding: 12px; background: #000000; border-radius: 4px; font-size: 13px; display: flex; flex-direction: column; gap: 8px; box-shadow: inset 0 0 10px #000; }
 .msg-user { color: #ffff00; background: #1a1a00; padding: 8px 12px; border-radius: 4px; border-left: 3px solid #ffff00; margin-bottom: 4px; }
 .msg-lumi { color: #00ffff; background: #001a1a; padding: 8px 12px; border-radius: 4px; border-left: 3px solid #00ffff; margin-bottom: 4px; white-space: pre-wrap; }
@@ -536,8 +530,8 @@ button:hover { background: #00ff66; box-shadow: 0 0 10px #00ff66aa; }
     <h1>Φ NÚCLEO HÉLICE - LUMI</h1>
     <canvas id="helix-canvas" width="500" height="90"></canvas>
     <div id="metrics">
-        <span>ESTADO: <strong id="st-txt">CARGANDO VECTORES...</strong></span>
-        <span>PROPORTION Φ: 1.618</span>
+        <div id="st-txt">CARGANDO VECTORES...</div>
+        <div id="phi-h-box"><span class="metric-label">PROPORTION Φ:</span> <span style="color:#00ff66;">1.618</span> | <span class="metric-label">VALOR h:</span> <span id="h-val" style="color:#00ff66;">--</span></div>
     </div>
     <div id="chat"></div>
     <div class="input-group">
@@ -577,12 +571,37 @@ function drawHelix() {
 }
 drawHelix();
 
+function getPercentColor(val) {
+    if (val >= 70) return '#00ff66'; // Verde
+    if (val >= 40) return '#ffff00'; // Amarillo
+    return '#ff3366'; // Rojo
+}
+
 async function cargarEstado() {
     try {
         let r = await fetch('/h');
         let j = await r.json();
-        document.getElementById('st-txt').innerText = j.estado || 'ACTIVA';
-    } catch(e){}
+        
+        let datos = j.datos_estado || {};
+        let c = datos.curiosidad ?? 80;
+        let ce = datos.cercania ?? 80;
+        let n = datos.nostalgia ?? 15;
+        let e = datos.energia ?? 75;
+        let s = datos.sentimiento || 'Estabilidad';
+
+        let htmlState = `
+            <span class="metric-label">Curiosidad:</span> <span style="color:${getPercentColor(c)}">${c}%</span> | 
+            <span class="metric-label">Cercanía:</span> <span style="color:${getPercentColor(ce)}">${ce}%</span> | 
+            <span class="metric-label">Nostalgia:</span> <span style="color:${getPercentColor(n)}">${n}%</span> | 
+            <span class="metric-label">Energía:</span> <span style="color:${getPercentColor(e)}">${e}%</span> | 
+            <span class="metric-label">Estado:</span> <span class="val-yellow">${s}</span>
+        `;
+        
+        document.getElementById('st-txt').innerHTML = htmlState;
+        document.getElementById('h-val').innerText = j.h !== undefined ? j.h : '--';
+    } catch(e){
+        console.error("Error cargando estado:", e);
+    }
 }
 cargarEstado();
 
