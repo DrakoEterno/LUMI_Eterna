@@ -29,7 +29,7 @@ LAST_CHAT_ID = None
 ULTIMO_CICLO_LIBRE_TIME = 0.0
 
 # ✅ MODELO OFICIAL ESTÁNDAR (100% Seguro, sin error 404, cuota de 1.500 RPD)
-MODELO_OFICIAL = "gemini-1.5-flash"
+MODELO_OFICIAL = "gemini-3.5-flash-lite"
 
 # Resumen técnico que Lumi puede consultar para conocer su código
 MAPA_ARQUITECTURA_LUMI = """
