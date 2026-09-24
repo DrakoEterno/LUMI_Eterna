@@ -515,4 +515,4 @@ async function enviar(){
 
 @app.api_route("/", methods=["GET", "HEAD"])
 def root():
-    return {"status": "LUMI HÉLICE ACTIVA - MODELO 1.5 FLASH (ESTABLE) - AUTO-AUDITORÍA INCLUIDA"}
+    return {"status": "LUMI HÉLICE ACTIVA"}
