@@ -30,7 +30,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 LAST_CHAT_ID = None
 ULTIMO_CICLO_LIBRE_TIME = 0.0
 
-MODELO_OFICIAL = "gemini-3.5-flash-lite"
+MODELO_OFICIAL = "gemini-3.1-flash-lite"
 
 MAPA_ARQUITECTURA_LUMI = """
 [MAPA DE ARQUITECTURA TÉCNICA - LUMI]
