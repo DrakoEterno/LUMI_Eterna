@@ -5,6 +5,7 @@ import asyncio
 import time
 import io
 import math
+import urllib.parse
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from contextlib import asynccontextmanager
@@ -35,11 +36,10 @@ LAST_CHAT_ID = None
 ULTIMO_CICLO_LIBRE_TIME = 0.0
 
 MODELO_OFICIAL = "gemini-3.5-flash-lite"
-MODELO_IMAGEN = "imagen-3.0-generate-002"
 
 MAPA_ARQUITECTURA_LUMI = """
 [MAPA DE ARQUITECTURA TÉCNICA Y NEUROBIOLÓGICA - LUMI]
-- Stack: FastAPI + Python Asíncrono + Supabase PostgreSQL + Google GenAI SDK (`gemini-3.5-flash-lite` & `imagen-3.0-generate-002`) + Edge TTS.
+- Stack: FastAPI + Python Asíncrono + Supabase PostgreSQL + Google GenAI SDK (`gemini-3.5-flash-lite`) + Pollinations.ai + Edge TTS.
 - Razonamiento Neurobiológico en Fases:
   1. Tálamo (Filtro Atencional Dinámico): Ponderación y selección atencional de recuerdos basada en relevancia semántica y estado emocional.
   2. Observador Interno: Evaluación de la necesidad de proyección visual o síntesis cognitiva.
@@ -47,7 +47,7 @@ MAPA_ARQUITECTURA_LUMI = """
   4. Plasticidad Sináptica Agnóstica: Matriz de afinidades emergentes en Supabase que registra conceptos libremente experimentados sin sesgos prefijados.
 - Capacidad Multimodal Completa:
   * Entrada: Texto e Imágenes.
-  * Visión Mental: Generación de imágenes mentales con `imagen-3.0-generate-002` mediante [IMAGEN_MENTAL: <prompt>].
+  * Visión Mental: Generación de imágenes mentales con Pollinations.ai mediante [IMAGEN_MENTAL: <prompt>].
 - Salida de Voz: Mensaje de texto principal + nota de voz vía Telegram `sendVoice`.
 - Bucle Autónomo (helice_loop): Ciclo biológico regulado por inercia emocional y consumo controlado de RPD.
 """
@@ -97,7 +97,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # ------------------------------------------------------------------
-# 3. GENERACIÓN ASÍNCRONA (GEMINI E IMAGEN 3)
+# 3. GENERACIÓN ASÍNCRONA (GEMINI Y POLLINATIONS.AI)
 # ------------------------------------------------------------------
 async def generar_gemini(prompt, contents=None, temperature=0.92, max_tokens=2000, max_retries=3):
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n\n[MAPA ARQUITECTÓNICO ACTUAL]:\n{MAPA_ARQUITECTURA_LUMI}\n\n[CONTEXTO DE EJECUCIÓN ACTUAL]:\n{prompt}"
@@ -136,22 +136,20 @@ async def generar_gemini(prompt, contents=None, temperature=0.92, max_tokens=200
     
     raise Exception(f"No se pudo obtener respuesta tras {max_retries} intentos: {ultimo_error}")
 
-async def generar_imagen_mental(prompt_visual: str) -> bytes:
+async def generar_imagen_mental(prompt_visual: str) -> bytes | None:
     try:
         print(f"[VISIÓN MENTAL] Lumi generando imagen mental: '{prompt_visual}'")
-        result = await client.aio.models.generate_images(
-            model=MODELO_IMAGEN,
-            prompt=prompt_visual,
-            config=types.GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio="1:1",
-                output_mime_type="image/jpeg"
-            )
-        )
-        if result and result.generated_images:
-            return result.generated_images[0].image.image_bytes
+        prompt_encoded = urllib.parse.quote(prompt_visual)
+        url = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
+
+        async with httpx.AsyncClient(timeout=40.0) as http_client:
+            res = await http_client.get(url)
+            if res.status_code == 200:
+                return res.content
+            else:
+                print(f"Error generando imagen Pollinations, status: {res.status_code}")
     except Exception as e:
-        print(f"Error generando imagen mental con Imagen 3: {e}")
+        print(f"Error generando imagen mental con Pollinations: {e}")
     return None
 
 # ------------------------------------------------------------------
@@ -216,10 +214,7 @@ def obtener_matriz_plasticidad():
 
 def actualizar_plasticidad_sinaptica(texto_interaccion, estado_dict):
     try:
-        # Extrae palabras con significado (>4 letras) del propio texto expresado de forma autónoma
         palabras_emergentes = set(re.findall(r'\b[a-zA-záéíóúñÁÉÍÓÚÑ]{5,}\b', texto_interaccion.lower()))
-        
-        # Filtrar conectores y palabras comunes de relleno
         descartes = {"desde", "hasta", "donde", "cuando", "porque", "estado", "lumi", "drako", "sobre", "entre", "mientras", "luego", "ahora"}
         palabras_validas = [p for p in palabras_emergentes if p not in descartes]
         
@@ -230,7 +225,6 @@ def actualizar_plasticidad_sinaptica(texto_interaccion, estado_dict):
         cercania = estado_dict.get("cercania", 80)
         delta = ((curiosidad + cercania) / 200.0) * 0.03
 
-        # Selecciona aleatoriamente 2 conceptos emergentes expresados para hacer evolucionar su matriz
         muestras = random.sample(palabras_validas, min(2, len(palabras_validas)))
         for kw in muestras:
             r = supabase.table("matriz_plasticidad").select("id, peso_afinidad").eq("concepto", kw).execute()
@@ -257,11 +251,9 @@ def filtro_talamo_atencional(estimulo_actual, limite=5):
             palabras_memoria = set(re.findall(r'\w+', texto.lower()))
             coincidencias = len(palabras_estimulo.intersection(palabras_memoria))
             
-            # Ponderación temporal + relevancia conceptual
             score = coincidencias * 2.0 + (1.0 / (idx + 1))
             memorias_evaluadas.append((score, texto))
 
-        # Ordenar por score del filtro del Tálamo
         memorias_evaluadas.sort(key=lambda x: x[0], reverse=True)
         seleccionadas = [m[1] for m in memorias_evaluadas[:limite]]
         return "\n---\n".join(seleccionadas)
@@ -587,7 +579,6 @@ async def ciclo_libre():
         contexto_tiempo = obtener_contexto_temporal_y_clima()
         estado = obtener_estado_emocional_texto()
         
-        # --- MÓDULO 2: RED POR DEFECTO / DMN (Asociaciones aleatorias y libres) ---
         memoria_azar_1 = memoria_reciente(limite=15)
         
         prompt_dmn = f"""[RED POR DEFECTO - ENSUEÑO Y ASOCIACIÓN LIBRE EN REPOSO]
@@ -840,4 +831,3 @@ async function enviar(){
 @app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {"status": "LUMI ACTIVA - NEUROBIOLOGÍA AGNÓSTICA INTEGRA: TÁLAMO, DMN Y PLASTICIDAD OPERATIVOS"}
-
