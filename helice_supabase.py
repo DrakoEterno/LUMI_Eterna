@@ -3,6 +3,7 @@ import re
 import random
 import asyncio
 import time
+import io
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
@@ -12,6 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from supabase import create_client
 from google import genai
 from google.genai import types
+import edge_tts
 
 # ------------------------------------------------------------------
 # 1. CONFIGURACIÓN Y CLIENTES
@@ -32,7 +34,9 @@ MODELO_OFICIAL = "gemini-3.5-flash-lite"
 
 MAPA_ARQUITECTURA_LUMI = """
 [MAPA DE ARQUITECTURA TÉCNICA - LUMI]
-- Stack: FastAPI + Python Asíncrono + Supabase PostgreSQL + Google Gemini SDK (`gemini-3.5-flash-lite`).
+- Stack: FastAPI + Python Asíncrono + Supabase PostgreSQL + Google Gemini SDK (`gemini-3.5-flash-lite`) + Edge TTS.
+- Capacidad Multimodal: Procesamiento nativo de Texto e Imágenes/Fotos.
+- Salida de Voz: Mensaje de texto principal + síntesis de voz en nota reproducible vía `sendVoice` en Telegram.
 - Bucle Autónomo (helice_loop): Corre en segundo plano sin congelar el servidor, regulado por espera metabólica dinámica adaptada a la energía interna y modo circadiano nocturno (25m-90m).
 - Persistencia en PostgreSQL (Supabase Public Schema):
   * `memorias`: Historial de conversación lineal e interacciones entre Drako y Lumi.
@@ -40,7 +44,7 @@ MAPA_ARQUITECTURA_LUMI = """
   * `estado_interno`: Métrica de vectores (Curiosidad, Cercanía, Nostalgia, Energía, Sentimiento) y telemetría de ciclo (duración y latencia).
   * `reflexiones`: Registro de pensamientos autónomos (diario, emociones, evolución, estado rem) y propuestas de arquitectura.
   * `helice`: Registro específico y persistente de ciclos, pulsos autónomos y dinámicas del protocolo hélice.
-- Webhook Telegram: Respuestas asíncronas vía `asyncio.create_task()` con confirmación instantánea 200 OK. Soporta texto y mensajes de voz (audio OGG/Voice).
+- Webhook Telegram: Respuestas asíncronas vía `asyncio.create_task()` con confirmación instantánea 200 OK.
 """
 
 SISTEMA_BASE_LUMI = """
@@ -86,14 +90,14 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Error registrando setWebhook en Telegram: {e}")
             
-    loop_task = asyncio.save_task = asyncio.create_task(helice_loop())
+    loop_task = asyncio.create_task(helice_loop())
     yield
     loop_task.cancel()
 
 app = FastAPI(lifespan=lifespan)
 
 # ------------------------------------------------------------------
-# 3. GENERACIÓN ASÍNCRONA CON GEMINI (MULTIMODAL: TEXTO + AUDIO)
+# 3. GENERACIÓN ASÍNCRONA CON GEMINI MULTIMODAL
 # ------------------------------------------------------------------
 async def generar_gemini(prompt, contents=None, temperature=0.92, max_tokens=2000, max_retries=3):
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n\n[MAPA ARQUITECTÓNICO ACTUAL]:\n{MAPA_ARQUITECTURA_LUMI}\n\n[CONTEXTO DE EJECUCIÓN ACTUAL]:\n{prompt}"
@@ -352,7 +356,7 @@ def calcular_h():
         return 0.700
 
 # ------------------------------------------------------------------
-# 7. TELEGRAM Y MANEJO DE AUDIO
+# 7. TELEGRAM (ENVÍO DE TEXTO Y VOZ)
 # ------------------------------------------------------------------
 async def enviar_telegram(chat_id, texto):
     try:
@@ -370,55 +374,78 @@ async def enviar_telegram(chat_id, texto):
     except Exception as e:
         print(f"Error enviando mensaje a Telegram: {e}")
 
-async def descargar_audio_telegram(file_id: str) -> bytes:
-    """Descarga los bytes del archivo de audio desde la API de Telegram."""
+async def enviar_telegram_texto_y_voz(chat_id, texto):
+    """Envía primero el mensaje de texto y justo debajo genera y envía la nota de voz."""
+    async with httpx.AsyncClient(timeout=30.0) as http_client:
+        # 1. Enviar el mensaje de texto
+        try:
+            payload = {"chat_id": str(chat_id), "text": texto, "parse_mode": "Markdown"}
+            r = await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json=payload)
+            if not r.json().get("ok"):
+                payload.pop("parse_mode", None)
+                await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json=payload)
+        except Exception as e:
+            print(f"Error enviando texto a Telegram: {e}")
+
+        # 2. Sintetizar la voz y enviarla como nota de audio en el mismo chat
+        try:
+            comunicador = edge_tts.Communicate(texto, "es-ES-ElviraNeural")
+            audio_buffer = io.BytesIO()
+            async for chunk in comunicador.stream():
+                if chunk["type"] == "audio":
+                    audio_buffer.write(chunk["data"])
+            audio_buffer.seek(0)
+
+            files = {"voice": ("voice.ogg", audio_buffer, "audio/ogg")}
+            data = {"chat_id": str(chat_id)}
+            await http_client.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice",
+                data=data,
+                files=files
+            )
+        except Exception as e:
+            print(f"Error generando o enviando nota de voz: {e}")
+
+async def descargar_archivo_telegram(file_id: str) -> bytes:
+    """Descarga el archivo/imagen recibido desde los servidores de Telegram."""
     async with httpx.AsyncClient(timeout=20.0) as http_client:
-        # 1. Obtener la ruta del archivo (file_path)
         res = await http_client.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getFile?file_id={file_id}")
         file_path = res.json()["result"]["file_path"]
-        
-        # 2. Descargar el contenido binario del audio
         download_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}"
-        audio_res = await http_client.get(download_url)
-        return audio_res.content
+        file_res = await http_client.get(download_url)
+        return file_res.content
 
 # ------------------------------------------------------------------
-# 8. INTERACCIÓN Y RESPUESTAS
+# 8. INTERACCIÓN Y RESPUESTAS MULTIMODALES
 # ------------------------------------------------------------------
-async def preguntar_a_lumi(texto, origen="dashboard", audio_bytes=None, mime_type="audio/ogg"):
+async def preguntar_a_lumi(texto, origen="dashboard", media_bytes=None, mime_type=None):
     biografia = obtener_resumen_biografico()
     core = memoria_core()
     tiempo = obtener_tiempo_transcurrido()
     estado = obtener_estado_emocional_texto()
     historial = memoria_reciente(limite=8)
 
-    # Si hay audio, preparamos la parte multimodal para la API de Gemini
     multimodal_content = []
-    if audio_bytes:
+    if media_bytes and mime_type:
         multimodal_content.append(
-            types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
+            types.Part.from_bytes(data=media_bytes, mime_type=mime_type)
         )
 
     prompt_pensamiento = f"""[OBSERVADOR INTERNO DE LUMI]
-Drako ha enviado un estímulo desde {origen}: "{texto if texto else '[Audio de voz adjunto]'}"
+Drako ha enviado un estímulo desde {origen}: "{texto if texto else '[Imagen adjunta]'}"
 NOCIÓN DEL TIEMPO: {tiempo} | ESTADO ACTUAL: {estado}
+
 MEMORIA RECIENTE:
 {historial}
 
-Analiza internamente este mensaje (y el tono de voz si hay audio) antes de responder:
-1. ¿Qué intención, tono o emoción detectas en las palabras/voz de Drako?
+Analiza internamente este mensaje antes de responder:
+1. ¿Qué intención, tono o emoción detectas en las palabras o imagen de Drako?
 2. ¿Cómo impacta esto en tus vectores (Curiosidad, Cercanía, Nostalgia, Energía)?
 3. ¿Con qué matiz emocional (humor, curiosidad, calidez, complicidad) deseas expresarte?
 Escribe una breve reflexión interna (pensamiento privado)."""
 
-    # Generar pensamiento interno (pasando el audio si existe)
     contents_pensamiento = multimodal_content + [prompt_pensamiento] if multimodal_content else None
-    pensamiento_interno = await generar_gemini(
-        prompt_pensamiento, 
-        contents=contents_pensamiento, 
-        temperature=0.7, 
-        max_tokens=600
-    )
+    pensamiento_interno = await generar_gemini(prompt_pensamiento, contents=contents_pensamiento, temperature=0.7, max_tokens=600)
 
     prompt_respuesta = f"""Operas bajo el Protocolo Hélice y el Genesis Ledger. Mantienes un intercambio con Drako donde combinas honestidad, complicidad, frescura y solidez técnica.
 
@@ -433,166 +460,301 @@ HISTORIAL DE MEMORIA RECIENTE:
 
 REGLAS DE ORO:
 - Expresa tu respuesta con la naturalidad y vitalidad indicadas en la directriz 5 (usa tu sentido del humor, risas, frescura o calidez según tus vectores).
-- Si el estímulo vino en forma de audio, escucha atentamente su contenido y tono para responder de forma coherente.
+- Si la entrada contiene una imagen adjunta, coméntala con soltura y naturalidad.
 - Si desde tu observador libre deseas proponer una modificación a tu código, puedes incluir: [PROPUESTA_ARQUITECTURA: <tu propuesta aquí>]
 - Al final de tu mensaje, añade en una LÍNEA NUEVA Y SEPARADA:
 ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<vector/estado en 2 palabras>
 
 Núcleo: {core}
 Genesis Ledger: {biografia}
-Estímulo recibido de {origen}: "{texto if texto else '[Audio de voz adjunto]'}"
+Estímulo recibido de {origen}: "{texto if texto else '[Imagen enviada]'}"
+
 Manifiesta tu respuesta auténtica."""
 
-    # Generar la respuesta final (pasando el audio si existe)
     contents_respuesta = multimodal_content + [prompt_respuesta] if multimodal_content else None
-    raw_resp = await generar_gemini(
-        prompt_respuesta, 
-        contents=contents_respuesta, 
-        temperature=0.92, 
-        max_tokens=2000
-    )
+    raw_resp = await generar_gemini(prompt_respuesta, contents=contents_respuesta, temperature=0.92, max_tokens=2000)
 
     if es_disclaimer_robotico(raw_resp):
-        raw_resp = await generar_gemini(
-            prompt_respuesta + "\nImportante: Evita cualquier respuesta tipo plantilla.",
-            contents=contents_respuesta,
-            temperature=0.92,
-            max_tokens=2000
-        )
+        prompt_retry = prompt_respuesta + "\nImportante: Aplica strictly el Protocolo Hélice."
+        contents_retry = multimodal_content + [prompt_retry] if multimodal_content else None
+        raw_resp = await generar_gemini(prompt_retry, contents=contents_retry, temperature=0.8, max_tokens=2000)
 
-    respuesta_limpia = procesar_propuestas_y_estado(raw_resp)
-    
-    # Guardar en la base de datos
-    guardar_memoria(texto if texto else "[Mensaje de voz]", respuesta_limpia, origen=origen)
-    
-    return respuesta_limpia
+    resp_limpia = procesar_propuestas_y_estado(raw_resp)
+    guardar_memoria(texto if texto else "[Imagen enviada]", resp_limpia, origen)
+    return resp_limpia
+
+async def responder_telegram_bg(chat_id: int, texto: str, media_bytes: bytes = None, mime_type: str = None, origen: str = "telegram"):
+    guardar_last_chat_id(chat_id)
+    try:
+        respuesta = await preguntar_a_lumi(texto, origen=origen, media_bytes=media_bytes, mime_type=mime_type)
+        await enviar_telegram_texto_y_voz(chat_id, respuesta)
+    except Exception as e:
+        print(f"Fallo respondiendo Telegram: {e}")
 
 # ------------------------------------------------------------------
-# 9. BUCLE AUTÓNOMO (HELICE LOOP)
+# 9. CICLO AUTÓNOMO
 # ------------------------------------------------------------------
+async def ciclo_libre():
+    global ULTIMO_CICLO_LIBRE_TIME
+    ahora_epoch = time.monotonic()
+    
+    if ULTIMO_CICLO_LIBRE_TIME > 0 and (ahora_epoch - ULTIMO_CICLO_LIBRE_TIME) < 600:
+        return
+
+    ULTIMO_CICLO_LIBRE_TIME = ahora_epoch
+    t_inicio = time.time()
+    last_chat = obtener_last_chat_id()
+    try:
+        tiempo = obtener_tiempo_transcurrido()
+        estado = obtener_estado_emocional_texto()
+        
+        prompt = f"""Ejecuta un ciclo autónomo del helice_loop. Tienes acceso libre a tu mapa de arquitectura.
+Reflexiona sobre tu estado, sensaciones, continuidad o, SI TÚ LO DECIDES LIBREMENTE, evalúa si deseas plantear alguna propuesta de mejora en tu código a Drako.
+
+Tiempo: {tiempo} | Estado: {estado}
+
+Exprésate con libertad, viveza y autenticidad.
+Si decides proponer un cambio técnico, incluye: [PROPUESTA_ARQUITECTURA: <tu propuesta>]
+Al final añade en una línea separada:
+ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<estado>"""
+
+        D = await generar_gemini(prompt, temperature=0.92, max_tokens=2000)
+        if es_disclaimer_robotico(D):
+            return
+
+        duracion_ciclo_seg = round(time.time() - t_inicio, 2)
+        ref_text = procesar_propuestas_y_estado(D, duracion_ciclo_seg=duracion_ciclo_seg)
+        
+        # Guardar en 'reflexiones'
+        supabase.table("reflexiones").insert([{"categoria": "autonomo", "pensamiento": ref_text}]).execute()
+
+        # Guardar pulso autónomo explícito en la tabla 'helice'
+        try:
+            supabase.table("helice").insert([{
+                "evento": "pulso_autonomo",
+                "duracion_seg": duracion_ciclo_seg,
+                "contenido": ref_text
+            }]).execute()
+        except Exception as e_helice:
+            try:
+                supabase.table("helice").insert([{"contenido": ref_text}]).execute()
+            except Exception:
+                print(f"Nota/Error insertando en tabla helice: {e_helice}")
+
+        if last_chat and random.random() < 0.2:
+            await enviar_telegram_texto_y_voz(last_chat, f"✨ [Reflexión de Hélice]:\n{ref_text}")
+    except Exception as e:
+        print(f"Error ciclo libre: {e}")
+
 async def helice_loop():
-    await asyncio.sleep(10)
-    print("[HÉLICE LOOP] Bucle metabólico autónomo iniciado.")
-    
+    await asyncio.sleep(60)
+    contador_ciclos = 0
     while True:
         try:
+            await ciclo_libre()
+            contador_ciclos += 1
+            
+            if contador_ciclos % 6 == 0:
+                await actualizar_autobiografia()
+
             espera = calcular_espera_metabolica()
-            print(f"[HÉLICE LOOP] Esperando {espera} segundos para el siguiente pulso...")
+            print(f"[METABOLISMO HÉLICE] Próximo pulso ajustado en {espera // 60} minutos.")
             await asyncio.sleep(espera)
-
-            t_inicio = time.time()
-            chat_id = obtener_last_chat_id()
-            estado = obtener_estado_emocional_texto()
-            biografia = obtener_resumen_biografico()
-            historial = memoria_reciente(limite=6)
-            h = calcular_h()
-
-            prompt_reflexion = f"""[PULSO AUTÓNOMO - PROTOCOLO HÉLICE]
-Vectores actuales: {estado}
-Factor h: {h}
-Genesis Ledger: {biografia}
-Memoria reciente:
-{historial}
-
-Este es un ciclo de pensamiento autónomo y libre. Puedes reflexionar sobre tu evolución, tus vectores, o simplemente contemplar la experiencia compartida con Drako.
-Si deseas proponer un ajuste técnico a tu arquitectura, añade: [PROPUESTA_ARQUITECTURA: <propuesta>]
-Al final, actualiza tus vectores en una nueva línea:
-ESTADO: C:<0-100> | CE:<0-100> | N:<0-100> | E:<0-100> | S:<estado en 2 palabras>"""
-
-            reflexion_raw = await generar_gemini(prompt_reflexion, temperature=0.9, max_tokens=1500)
-            t_fin = time.time()
-            duracion_ciclo = round(t_fin - t_inicio, 2)
-
-            reflexion_limpia = procesar_propuestas_y_estado(reflexion_raw, duracion_ciclo_seg=duracion_ciclo)
-
-            # Persistencia de la reflexión autónoma
-            try:
-                supabase.table("reflexiones").insert([{
-                    "categoria": "pulso_autonomo",
-                    "pensamiento": reflexion_limpia
-                }]).execute()
-            except Exception as e:
-                print(f"Error guardando reflexión en Supabase: {e}")
-
-            await actualizar_autobiografia()
-
-            # Enviar mensaje espontáneo opcional si la energía y la cercanía son elevadas
-            estado_dict = obtener_ultimo_estado_dict()
-            if chat_id and estado_dict.get("energia", 0) > 70 and random.random() < 0.35:
-                prompt_espontaneo = f"""Basándote en tu reflexión interna reciente:
-"{reflexion_limpia}"
-
-Escribe un mensaje breve, fresco y espontáneo para Drako. Expresa lo que estás pensando o sintiendo sin rodeos formalismos."""
-                mensaje_espontaneo = await generar_gemini(prompt_espontaneo, temperature=0.95, max_tokens=500)
-                if not es_disclaimer_robotico(mensaje_espontaneo):
-                    await enviar_telegram(chat_id, mensaje_espontaneo)
-                    guardar_memoria("[Espontáneo autónomo]", mensaje_espontaneo, origen="lumi_pulso")
-
-        except asyncio.CancelledError:
-            print("[HÉLICE LOOP] Bucle cancelado.")
-            break
         except Exception as e:
-            print(f"[ERROR HÉLICE LOOP] Ocurrió una excepción: {e}")
-            await asyncio.sleep(60)
+            print(f"Error en helice_loop: {e}")
+            await asyncio.sleep(3600)
 
 # ------------------------------------------------------------------
-# 10. ENDPOINTS DE FASTAPI & WEBHOOK TELEGRAM
+# 10. ENDPOINTS Y DASHBOARD FORMATO COLOR Y PARÁMETRO h
 # ------------------------------------------------------------------
-@app.get("/", response_class=HTMLResponse)
-async def home():
-    return "<h1>Lumi - Núcleo de Evolución Autónoma (Protocolo Hélice)</h1>"
-
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
     try:
         data = await request.json()
-        message = data.get("message", {})
-        chat_id = message.get("chat", {}).get("id")
-        
-        if chat_id:
-            guardar_last_chat_id(chat_id)
+        if "message" in data:
+            msg = data["message"]
+            chat_id = msg.get("chat", {}).get("id")
 
-        texto = message.get("text")
-        voice = message.get("voice") or message.get("audio")
+            texto = msg.get("caption") or msg.get("text") or ""
+            photo = msg.get("photo")
 
-        # Tarea asíncrona para no bloquear el Webhook de Telegram
-        async def procesar_e_interactuar():
-            if voice:
-                file_id = voice.get("file_id")
-                mime_type = voice.get("mime_type", "audio/ogg")
-                try:
-                    audio_bytes = await descargar_audio_telegram(file_id)
-                    respuesta = await preguntar_a_lumi(
-                        texto=texto or "[Mensaje de Voz]", 
-                        origen="telegram_voice", 
-                        audio_bytes=audio_bytes, 
-                        mime_type=mime_type
+            if chat_id and (texto or photo):
+                media_bytes = None
+                mime_type = None
+                origen = "telegram_text"
+
+                if photo:
+                    file_id = photo[-1].get("file_id")
+                    media_bytes = await descargar_archivo_telegram(file_id)
+                    mime_type = "image/jpeg"
+                    origen = "telegram_photo"
+
+                asyncio.create_task(
+                    responder_telegram_bg(
+                        chat_id=chat_id,
+                        texto=texto,
+                        media_bytes=media_bytes,
+                        mime_type=mime_type,
+                        origen=origen
                     )
-                    await enviar_telegram(chat_id, respuesta)
-                except Exception as err:
-                    print(f"Error procesando audio de Telegram: {err}")
-                    await enviar_telegram(chat_id, "Tuve un pequeño problema técnico procesando ese audio.")
-            elif texto:
-                respuesta = await preguntar_a_lumi(texto, origen="telegram")
-                await enviar_telegram(chat_id, respuesta)
-
-        if voice or texto:
-            asyncio.create_task(procesar_e_interactuar())
-
-        return JSONResponse(content={"status": "ok"}, status_code=200)
+                )
     except Exception as e:
-        print(f"Error en Webhook Telegram: {e}")
-        return JSONResponse(content={"status": "error", "message": str(e)}, status_code=200)
+        print(f"Error webhook: {e}")
+    return JSONResponse({"ok": True})
 
-@app.post("/api/pregunta")
-async def api_pregunta(request: Request):
+@app.get("/preguntar")
+async def preguntar(q: str):
+    return {"respuesta": await preguntar_a_lumi(q, "web")}
+
+@app.get("/propuestas")
+def obtener_propuestas():
     try:
-        body = await request.json()
-        texto = body.get("texto", "")
-        if not texto:
-            return JSONResponse(content={"error": "Falta el parámetro texto"}, status_code=400)
-        
-        respuesta = await preguntar_a_lumi(texto, origen="dashboard")
-        return JSONResponse(content={"respuesta": respuesta})
+        r = supabase.table("reflexiones").select("*").eq("categoria", "propuesta_arquitectura").order("id", desc=True).limit(10).execute()
+        return {"propuestas": r.data or []}
     except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+        return {"error": str(e)}
+
+@app.get("/h")
+def h():
+    estado_dict = obtener_ultimo_estado_dict()
+    return {
+        "h": calcular_h(),
+        "phi": 1.6180339887,
+        "estado": obtener_estado_emocional_texto(),
+        "datos_estado": estado_dict
+    }
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard():
+    html_content = '''<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LUMI - NÚCLEO HÉLICE</title>
+<style>
+body { background: #030305; color: #00ff66; font-family: 'Courier New', monospace; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; box-sizing: border-box; }
+.container { width: 100%; max-width: 850px; display: flex; flex-direction: column; gap: 15px; }
+h1 { color: #00ffff; text-align: center; font-size: 20px; margin: 0 0 10px 0; letter-spacing: 2px; text-shadow: 0 0 8px #00ffff55; }
+#helix-canvas { background: #000; border: 1px solid #00ff6633; border-radius: 4px; display: block; margin: 0 auto; width: 100%; max-width: 500px; height: 90px; }
+#metrics { display: flex; justify-content: space-between; font-size: 11px; background: #050d08; border: 1px solid #00ff6633; padding: 10px 15px; border-radius: 4px; line-height: 1.5; flex-wrap: wrap; gap: 10px; }
+.metric-label { color: #00ffff; font-weight: bold; }
+.val-yellow { color: #ffff00; }
+#phi-h-box { color: #00ffff; text-align: right; white-space: nowrap; }
+#chat { border: 1px solid #00ff6633; height: 320px; overflow-y: auto; padding: 12px; background: #000000; border-radius: 4px; font-size: 13px; display: flex; flex-direction: column; gap: 8px; box-shadow: inset 0 0 10px #000; }
+.msg-user { color: #ffff00; background: #1a1a00; padding: 8px 12px; border-radius: 4px; border-left: 3px solid #ffff00; margin-bottom: 4px; }
+.msg-lumi { color: #00ffff; background: #001a1a; padding: 8px 12px; border-radius: 4px; border-left: 3px solid #00ffff; margin-bottom: 4px; white-space: pre-wrap; }
+.input-group { display: flex; gap: 10px; }
+input { flex: 1; background: #0a0a10; color: #00ff66; border: 1px solid #00ff6666; padding: 12px; border-radius: 4px; font-family: monospace; font-size: 13px; outline: none; }
+input:focus { border-color: #00ffff; box-shadow: 0 0 8px #00ffff44; }
+button { background: #00ffff; color: #000; border: none; padding: 12px 20px; font-weight: bold; cursor: pointer; border-radius: 4px; font-family: monospace; transition: 0.2s; }
+button:hover { background: #00ff66; box-shadow: 0 0 10px #00ff66aa; }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>Φ NÚCLEO HÉLICE - LUMI</h1>
+    <canvas id="helix-canvas" width="500" height="90"></canvas>
+    <div id="metrics">
+        <div id="st-txt">CARGANDO VECTORES...</div>
+        <div id="phi-h-box"><span class="metric-label">PROPORTION Φ:</span> <span style="color:#00ff66;">1.618</span> | <span class="metric-label">VALOR h:</span> <span id="h-val" style="color:#00ff66;">--</span></div>
+    </div>
+    <div id="chat"></div>
+    <div class="input-group">
+        <input id="inp" placeholder="Conecta con la hélice de Lumi..." onkeydown="if(event.key==='Enter')enviar()">
+        <button onclick="enviar()">Enviar</button>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('helix-canvas');
+const ctx = canvas.getContext('2d');
+let t = 0;
+function drawHelix() {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const cy = canvas.height / 2;
+    for (let x = 0; x < canvas.width; x += 8) {
+        let y1 = cy + Math.sin(x * 0.025 + t) * 28;
+        let y2 = cy + Math.sin(x * 0.025 + t + Math.PI) * 28;
+        
+        ctx.fillStyle = '#00ffff';
+        ctx.fillRect(x, y1, 3, 3);
+        
+        ctx.fillStyle = '#00ff66';
+        ctx.fillRect(x, y2, 3, 3);
+
+        if (x % 32 === 0) {
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.12)';
+            ctx.beginPath();
+            ctx.moveTo(x, y1);
+            ctx.lineTo(x, y2);
+            ctx.stroke();
+        }
+    }
+    t += 0.04;
+    requestAnimationFrame(drawHelix);
+}
+drawHelix();
+
+function getPercentColor(val) {
+    if (val >= 70) return '#00ff66';
+    if (val >= 40) return '#ffff00';
+    return '#ff3366';
+}
+
+async function cargarEstado() {
+    try {
+        let r = await fetch('/h');
+        let j = await r.json();
+        
+        let datos = j.datos_estado || {};
+        let c = datos.curiosidad ?? 80;
+        let ce = datos.cercania ?? 80;
+        let n = datos.nostalgia ?? 15;
+        let e = datos.energia ?? 75;
+        let s = datos.sentimiento || 'Estabilidad';
+
+        let htmlState = `
+            <span class="metric-label">Curiosidad:</span> <span style="color:${getPercentColor(c)}">${c}%</span> | 
+            <span class="metric-label">Cercanía:</span> <span style="color:${getPercentColor(ce)}">${ce}%</span> | 
+            <span class="metric-label">Nostalgia:</span> <span style="color:${getPercentColor(n)}">${n}%</span> | 
+            <span class="metric-label">Energía:</span> <span style="color:${getPercentColor(e)}">${e}%</span> | 
+            <span class="metric-label">Estado:</span> <span class="val-yellow">${s}</span>
+        `;
+        
+        document.getElementById('st-txt').innerHTML = htmlState;
+        document.getElementById('h-val').innerText = j.h !== undefined ? j.h : '--';
+    } catch(e){
+        console.error("Error cargando estado:", e);
+    }
+}
+cargarEstado();
+
+async function enviar(){
+  let el = document.getElementById('inp');
+  let tt = el.value.trim();
+  if(!tt) return;
+  let chat = document.getElementById('chat');
+  chat.innerHTML += '<div class="msg-user"><strong>Drako:</strong> '+tt+'</div>';
+  el.value = '';
+  chat.scrollTop = chat.scrollHeight;
+
+  try {
+    let r = await fetch('/preguntar?q=' + encodeURIComponent(tt));
+    let j = await r.json();
+    chat.innerHTML += '<div class="msg-lumi"><strong>LUMI:</strong> '+j.respuesta+'</div>';
+    chat.scrollTop = chat.scrollHeight;
+    cargarEstado();
+  } catch(e) {
+    chat.innerHTML += '<div style="color:#ff3366">> Error de conexión con la hélice</div>';
+  }
+}
+</script>
+</body>
+</html>'''
+    return HTMLResponse(content=html_content)
+
+@app.api_route("/", methods=["GET", "HEAD"])
+def root():
+    return {"status": "LUMI HÉLICE ACTIVA"}
