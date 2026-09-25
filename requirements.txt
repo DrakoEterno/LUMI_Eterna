@@ -1,6 +1,7 @@
 fastapi
 uvicorn
+httpx
 supabase
 google-genai
-requests
 edge-tts
+tzdata
