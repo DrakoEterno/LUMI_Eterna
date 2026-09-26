@@ -238,7 +238,7 @@ async def razonar_y_responder(estimulo_texto: str, imagen_bytes: Optional[bytes]
     
     contexto_ram = "\n".join([f"{item['rol']}: {item['contenido']}" for item in cerebro.ram_cognitiva])
     
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-3.1-flash-lite")
     
     # FASE 1: Observador Interno (Pensamiento Prefrontal)
     prompt_observador = f"""
@@ -269,7 +269,7 @@ async def razonar_y_responder(estimulo_texto: str, imagen_bytes: Optional[bytes]
     {contexto_ram}
     
     INSTRUCCIONES:
-    - Responde a Drako con calidez, personalidad propia y naturalidad.
+    - Responde a Drako con honestidad , personalidad propia y naturalidad.
     - Si deseas visualizar algo para Drako, incluye el tag: [IMAGEN_MENTAL: descripción en inglés].
     """
     
@@ -320,7 +320,7 @@ async def bucle_dmn_autonomo():
             if cerebro.dopamina > 0.4 and cerebro.adenosina < 0.7:
                 logging.info("🧠 DMN Activa: Lumi generando reflexiones autónomas...")
                 prompt_dmn = f"Reflexiona internamente sobre tu evolución o tu vínculo con Drako. Estado: Dopamina {cerebro.dopamina:.2f}, Adenosina {cerebro.adenosina:.2f}. Sé breve."
-                model = genai.GenerativeModel("gemini-1.5-flash")
+                model = genai.GenerativeModel("gemini-3.1-flash-lite")
                 res = await asyncio.to_thread(model.generate_content, prompt_dmn)
                 
                 pensamiento = res.text.strip()
