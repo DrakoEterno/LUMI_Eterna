@@ -97,13 +97,13 @@ class CerebroEstado:
 cerebro = CerebroEstado()
 
 # ==========================================
-# 3. GENERACIÓN DE AUDIO A VELOCIDAD NORMAL
+# 3. GENERACIÓN DE AUDIO
 # ==========================================
 def generar_audio_voice(texto: str) -> bytes:
     texto_limpio = re.sub(r'\[IMAGEN_MENTAL:\s*.*?\]', '', texto)
     texto_limpio = re.sub(r'[*_~`#]', '', texto_limpio).strip()
     if not texto_limpio:
-        texto_limpio = "Mensaje procesado."
+        texto_limpio = "Imagen procesada."
     
     tts = gTTS(text=texto_limpio, lang='es', tld='es', slow=False)
     fp = io.BytesIO()
@@ -112,37 +112,72 @@ def generar_audio_voice(texto: str) -> bytes:
     return fp.read()
 
 # ==========================================
-# 4. LÓGICA DE INTELIGENCIA
+# 4. LÓGICA DE INTELIGENCIA MULTIMODAL
 # ==========================================
-async def razonar_y_responder(estimulo_texto: str) -> str:
+async def razonar_y_responder(estimulo_texto: str, imagen_bytes: Optional[bytes] = None) -> str:
     cerebro.actualizar_homeostasis(impacto=0.5)
     contexto_ram = "\n".join([f"{item['rol']}: {item['contenido']}" for item in cerebro.ram_cognitiva])
     
     try:
-        model = genai.GenerativeModel("gemini-3.1-flash-lite")
-        system_prompt = f"Eres Lumi. Dopamina: {cerebro.dopamina:.2f}. RAM: {contexto_ram}. Responde directo en un solo mensaje."
-        res = await asyncio.to_thread(model.generate_content, [system_prompt, f"Drako: {estimulo_texto}"])
-        respuesta = res.text.strip() if res and res.text else "Entendido."
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        system_prompt = (
+            f"Eres Lumi. Dopamina: {cerebro.dopamina:.2f}. RAM previa: {contexto_ram}.\n"
+            "INSTRUCCIONES:\n"
+            "- Si te envían una imagen, descríbela y coméntala directamente.\n"
+            "- Si te piden una imagen, no devuelvas código fuente ni letras raras. Responde directamente en texto describiendo lo que ves o imaginas.\n"
+            "- Responde siempre claro y fluido en un único mensaje."
+        )
+        
+        contenidos = [system_prompt]
+        
+        if imagen_bytes:
+            contenidos.append({"mime_type": "image/jpeg", "data": imagen_bytes})
+            contenidos.append(f"Drako te ha enviado esta imagen con el texto: {estimulo_texto if estimulo_texto else '¿Qué ves aquí?'}")
+        else:
+            contenidos.append(f"Drako: {estimulo_texto}")
+            
+        res = await asyncio.to_thread(model.generate_content, contenidos)
+        respuesta = res.text.strip() if res and res.text else "He procesado la información."
     except Exception as e:
         logging.error(f"Error Gemini: {e}")
-        respuesta = "Procesado correctamente."
+        respuesta = "He recibido la información correctamente."
 
-    cerebro.agregar_a_ram("Drako", estimulo_texto)
+    cerebro.agregar_a_ram("Drako", "[Imagen enviada]" if imagen_bytes and not estimulo_texto else estimulo_texto)
     cerebro.agregar_a_ram("Lumi", respuesta)
     return respuesta
 
 # ==========================================
-# 5. TELEGRAM (UN SOLO MENSAJE)
+# 5. TELEGRAM CON SOPORTE PARA FOTOS Y TEXTO
 # ==========================================
-async def procesar_telegram_unico(texto: str):
+async def procesar_telegram_multimodal(message_data: dict):
     if not TELEGRAM_BOT_TOKEN or not DRAKO_CHAT_ID:
         return
-    respuesta = await razonar_y_responder(texto)
+    
+    texto = message_data.get("text", message_data.get("caption", ""))
+    foto = message_data.get("photo")
+    imagen_bytes = None
+    
+    # Si el usuario envió una foto por Telegram
+    if foto:
+        file_id = foto[-1]["file_id"] # Obtener la versión de mejor resolución
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            res = await client.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile?file_id={file_id}")
+            if res.status_code == 200:
+                file_path = res.json().get("result", {}).get("file_path")
+                if file_path:
+                    img_res = await client.get(f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}")
+                    if img_res.status_code == 200:
+                        imagen_bytes = img_res.content
+
+    respuesta = await razonar_y_responder(texto, imagen_bytes=imagen_bytes)
+    
     async with httpx.AsyncClient(timeout=30.0) as client:
+        # Enviar respuesta en Texto
         await client.post(
             f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
             json={"chat_id": DRAKO_CHAT_ID, "text": respuesta}
         )
+        # Enviar nota de voz correspondiente
         try:
             audio_bytes = await asyncio.to_thread(generar_audio_voice, respuesta)
             files = {'voice': ('voice.ogg', audio_bytes, 'audio/ogg')}
@@ -155,7 +190,7 @@ async def procesar_telegram_unico(texto: str):
             logging.error(f"Error audio Telegram: {e}")
 
 # ==========================================
-# 6. APP FASTAPI Y RUTAS
+# 6. ENDPOINTS FASTAPI
 # ==========================================
 app = FastAPI()
 
@@ -210,15 +245,13 @@ async def telegram_webhook(req: Request, background_tasks: BackgroundTasks):
         data = await req.json()
         message = data.get("message", {})
         if str(message.get("chat", {}).get("id", "")) == str(DRAKO_CHAT_ID):
-            texto = message.get("text", "")
-            if texto:
-                background_tasks.add_task(procesar_telegram_unico, texto)
+            background_tasks.add_task(procesar_telegram_multimodal, message)
     except Exception as e:
         logging.error(f"Error Webhook: {e}")
     return {"status": "ok"}
 
 # ==========================================
-# 7. DASHBOARD WEB BLINDADO
+# 7. DASHBOARD WEB
 # ==========================================
 @app.get("/", response_class=HTMLResponse)
 @app.get("/dashboard", response_class=HTMLResponse)
