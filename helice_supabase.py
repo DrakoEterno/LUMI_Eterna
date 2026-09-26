@@ -119,7 +119,7 @@ async def razonar_y_responder(estimulo_texto: str, imagen_bytes: Optional[bytes]
     contexto_ram = "\n".join([f"{item['rol']}: {item['contenido']}" for item in cerebro.ram_cognitiva])
     
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-3.1-flash-lite")
         system_prompt = (
             f"Eres Lumi. Dopamina: {cerebro.dopamina:.2f}. RAM previa: {contexto_ram}.\n"
             "INSTRUCCIONES:\n"
