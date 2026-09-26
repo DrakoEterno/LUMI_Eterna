@@ -407,6 +407,7 @@ async def telegram_webhook(req: Request):
     return {"status": "ok"}
 
 @app.get("/h")
+@app.get("/estado_cerebral")
 def estado_cerebral():
     return {
         "dopamina": cerebro.dopamina,
@@ -489,7 +490,7 @@ def dashboard():
         <script>
             async function actualizarEstado() {
                 try {
-                    const res = await fetch('/h');
+                    const res = await fetch('/estado_cerebral');
                     const data = await res.json();
                     
                     document.getElementById('val-dopamina').innerText = (data.dopamina * 100).toFixed(1) + '%';
@@ -549,3 +550,4 @@ def dashboard():
     </body>
     </html>
     """
+
