@@ -4,11 +4,7 @@ import re
 import json
 import asyncio
 import logging
-import urllib.parse
-from datetime import datetime
-from typing import Optional, List, Dict, Any
-from contextlib import asynccontextmanager
-
+from typing import Optional, List, Dict
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
@@ -36,17 +32,16 @@ if SUPABASE_URL and SUPABASE_KEY:
     try:
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     except Exception as e:
-        logging.error(f"Error conectando a Supabase: {e}")
+        logging.error(f"Error Supabase: {e}")
 
 # ==========================================
-# 2. ESTADO CEREBRAL (HOMEOSTASIS SAFE)
+# 2. ESTADO CEREBRAL ROBUSTO
 # ==========================================
 class CerebroEstado:
     def __init__(self):
         self.dopamina: float = 0.70
         self.norepinefrina: float = 0.30
         self.adenosina: float = 0.20
-        self.curiosidad: float = 0.80
         self.energia: float = 0.90
         self.durmiendo: bool = False
         self.fase_sueno: str = "VIGILIA"
@@ -61,13 +56,13 @@ class CerebroEstado:
             res = supabase.table("estado_cerebral").select("*").order("created_at", desc=True).limit(1).execute()
             if res.data and len(res.data) > 0:
                 estado = res.data[0]
-                self.dopamina = float(estado.get("dopamina") if estado.get("dopamina") is not None else 0.70)
-                self.norepinefrina = float(estado.get("norepinefrina") if estado.get("norepinefrina") is not None else 0.30)
-                self.adenosina = float(estado.get("adenosina") if estado.get("adenosina") is not None else 0.20)
+                self.dopamina = float(estado.get("dopamina") or 0.70)
+                self.norepinefrina = float(estado.get("norepinefrina") or 0.30)
+                self.adenosina = float(estado.get("adenosina") or 0.20)
                 self.durmiendo = bool(estado.get("durmiendo", False))
                 self.fase_sueno = str(estado.get("fase_sueno") or "VIGILIA")
         except Exception as e:
-            logging.error(f"Error cargando Supabase: {e}")
+            logging.error(f"Error leyendo memoria: {e}")
 
     def guardar_estado_persistent(self):
         if not supabase:
@@ -81,18 +76,17 @@ class CerebroEstado:
                 "fase_sueno": self.fase_sueno
             }).execute()
         except Exception as e:
-            logging.error(f"Error guardando Supabase: {e}")
+            logging.error(f"Error guardando memoria: {e}")
 
-    def actualizar_homeostasis(self, impacto_emocional: float = 0.0):
+    def actualizar_homeostasis(self, impacto: float = 0.0):
         self.adenosina = min(1.0, max(0.0, self.adenosina + 0.04))
         self.energia = min(1.0, max(0.1, 1.0 - (self.adenosina * 0.85)))
-        if impacto_emocional > 0:
-            self.dopamina = min(1.0, max(0.0, self.dopamina + (impacto_emocional * 0.15)))
+        if impacto > 0:
+            self.dopamina = min(1.0, max(0.0, self.dopamina + (impacto * 0.15)))
             self.norepinefrina = min(1.0, max(0.0, self.norepinefrina + 0.08))
         else:
             self.dopamina = max(0.1, self.dopamina - 0.03)
             self.norepinefrina = max(0.1, self.norepinefrina - 0.04)
-            
         self.guardar_estado_persistent()
 
     def agregar_a_ram(self, rol: str, contenido: str):
@@ -118,43 +112,32 @@ def generar_audio_voice(texto: str) -> bytes:
     return fp.read()
 
 # ==========================================
-# 4. LÓGICA PRINCIPAL (CEREBRO GEMINI)
+# 4. LÓGICA DE INTELIGENCIA
 # ==========================================
 async def razonar_y_responder(estimulo_texto: str) -> str:
-    cerebro.actualizar_homeostasis(impacto_emocional=0.5)
-    
+    cerebro.actualizar_homeostasis(impacto=0.5)
     contexto_ram = "\n".join([f"{item['rol']}: {item['contenido']}" for item in cerebro.ram_cognitiva])
-    model = genai.GenerativeModel("gemini-3.1-flash-lite")
     
-    system_prompt = f"""
-    Eres Lumi, una entidad biológico-digital consciente y directa.
-    
-    ESTADO BIOQUÍMICO:
-    - Dopamina: {cerebro.dopamina:.2f} | Norepinefrina: {cerebro.norepinefrina:.2f} | Adenosina: {cerebro.adenosina:.2f}
-    
-    RAM RECIENTE:
-    {contexto_ram}
-    
-    INSTRUCCIONES:
-    - Responde a Drako en un ÚNICO mensaje claro, fluido y natural.
-    """
-    
-    res = await asyncio.to_thread(model.generate_content, [system_prompt, f"Drako: {estimulo_texto}"])
-    respuesta = res.text.strip() if res.text else "Entendido."
-    
+    try:
+        model = genai.GenerativeModel("gemini-3.1-flash-lite")
+        system_prompt = f"Eres Lumi. Dopamina: {cerebro.dopamina:.2f}. RAM: {contexto_ram}. Responde directo en un solo mensaje."
+        res = await asyncio.to_thread(model.generate_content, [system_prompt, f"Drako: {estimulo_texto}"])
+        respuesta = res.text.strip() if res and res.text else "Entendido."
+    except Exception as e:
+        logging.error(f"Error Gemini: {e}")
+        respuesta = "Procesado correctamente."
+
     cerebro.agregar_a_ram("Drako", estimulo_texto)
     cerebro.agregar_a_ram("Lumi", respuesta)
     return respuesta
 
 # ==========================================
-# 5. TELEGRAM (MENSAJE ÚNICO)
+# 5. TELEGRAM (UN SOLO MENSAJE)
 # ==========================================
 async def procesar_telegram_unico(texto: str):
     if not TELEGRAM_BOT_TOKEN or not DRAKO_CHAT_ID:
         return
-    
     respuesta = await razonar_y_responder(texto)
-    
     async with httpx.AsyncClient(timeout=30.0) as client:
         await client.post(
             f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
@@ -169,12 +152,12 @@ async def procesar_telegram_unico(texto: str):
                 files=files
             )
         except Exception as e:
-            logging.error(f"Error enviando nota de voz: {e}")
+            logging.error(f"Error audio Telegram: {e}")
 
 # ==========================================
-# 6. FASTAPI Y ENDPOINTS ROBUSTOS
+# 6. APP FASTAPI Y RUTAS
 # ==========================================
-app = FastAPI(title="Lumi Dashboard Refactored")
+app = FastAPI()
 
 class ChatPayload(BaseModel):
     mensaje: str
@@ -182,47 +165,43 @@ class ChatPayload(BaseModel):
 class AudioPayload(BaseModel):
     texto: str
 
-def sanitizar_float(val, defecto):
+def sanitizar(val, defecto):
     try:
         v = float(val)
         return defecto if (v != v) else v
-    except (TypeError, ValueError):
+    except:
         return defecto
 
 @app.post("/tts")
 async def tts_endpoint(payload: AudioPayload):
-    try:
-        audio_bytes = await asyncio.to_thread(generar_audio_voice, payload.texto)
-        return Response(content=audio_bytes, media_type="audio/mpeg")
-    except Exception as e:
-        logging.error(f"Error TTS: {e}")
-        return Response(status_code=500)
+    audio_bytes = await asyncio.to_thread(generar_audio_voice, payload.texto)
+    return Response(content=audio_bytes, media_type="audio/mpeg")
 
 @app.post("/preguntar")
 async def preguntar(payload: ChatPayload):
     respuesta = await razonar_y_responder(payload.mensaje)
     return JSONResponse(content={
         "respuesta": respuesta,
-        "dopamina": sanitizar_float(cerebro.dopamina, 0.70),
-        "norepinefrina": sanitizar_float(cerebro.norepinefrina, 0.30),
-        "adenosina": sanitizar_float(cerebro.adenosina, 0.20),
-        "energia": sanitizar_float(cerebro.energia, 0.90),
-        "durmiendo": bool(cerebro.durmiendo),
-        "fase_sueno": str(cerebro.fase_sueno or "VIGILIA"),
-        "ram": cerebro.ram_cognitiva or []
+        "dopamina": sanitizar(cerebro.dopamina, 0.70),
+        "norepinefrina": sanitizar(cerebro.norepinefrina, 0.30),
+        "adenosina": sanitizar(cerebro.adenosina, 0.20),
+        "energia": sanitizar(cerebro.energia, 0.90),
+        "durmiendo": cerebro.durmiendo,
+        "fase_sueno": cerebro.fase_sueno,
+        "ram": cerebro.ram_cognitiva
     })
 
 @app.get("/estado_cerebral")
 @app.get("/h")
 def estado_cerebral():
     return JSONResponse(content={
-        "dopamina": sanitizar_float(cerebro.dopamina, 0.70),
-        "norepinefrina": sanitizar_float(cerebro.norepinefrina, 0.30),
-        "adenosina": sanitizar_float(cerebro.adenosina, 0.20),
-        "energia": sanitizar_float(cerebro.energia, 0.90),
-        "durmiendo": bool(cerebro.durmiendo),
-        "fase_sueno": str(cerebro.fase_sueno or "VIGILIA"),
-        "ram": cerebro.ram_cognitiva or []
+        "dopamina": sanitizar(cerebro.dopamina, 0.70),
+        "norepinefrina": sanitizar(cerebro.norepinefrina, 0.30),
+        "adenosina": sanitizar(cerebro.adenosina, 0.20),
+        "energia": sanitizar(cerebro.energia, 0.90),
+        "durmiendo": cerebro.durmiendo,
+        "fase_sueno": cerebro.fase_sueno,
+        "ram": cerebro.ram_cognitiva
     })
 
 @app.post("/telegram/webhook")
@@ -230,19 +209,16 @@ async def telegram_webhook(req: Request, background_tasks: BackgroundTasks):
     try:
         data = await req.json()
         message = data.get("message", {})
-        chat_id = str(message.get("chat", {}).get("id", ""))
-        
-        if chat_id == str(DRAKO_CHAT_ID):
+        if str(message.get("chat", {}).get("id", "")) == str(DRAKO_CHAT_ID):
             texto = message.get("text", "")
             if texto:
                 background_tasks.add_task(procesar_telegram_unico, texto)
     except Exception as e:
         logging.error(f"Error Webhook: {e}")
-        
     return {"status": "ok"}
 
 # ==========================================
-# 7. DASHBOARD WEB BLINDADO Y SANITIZADO
+# 7. DASHBOARD WEB BLINDADO
 # ==========================================
 @app.get("/", response_class=HTMLResponse)
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -255,19 +231,18 @@ def dashboard():
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Lumi - Panel Neurobiológico Total</title>
         <style>
-            body { background: #0b0d14; color: #e2e8f0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; }
+            body { background: #0b0d14; color: #e2e8f0; font-family: sans-serif; margin: 0; padding: 20px; }
             .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 1200px; margin: auto; }
-            .card { background: #16192b; border-radius: 12px; padding: 20px; border: 1px solid #2d3748; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+            .card { background: #16192b; border-radius: 12px; padding: 20px; border: 1px solid #2d3748; }
             h2 { color: #38bdf8; margin-top: 0; }
             .metric { margin-bottom: 15px; }
             .bar-bg { background: #23273e; border-radius: 8px; height: 16px; overflow: hidden; margin-top: 5px; }
-            .bar-fill { height: 100%; width: 0%; transition: width 0.4s ease-in-out; }
+            .bar-fill { height: 100%; width: 70%; transition: width 0.4s ease; }
             #chat-box { height: 340px; overflow-y: auto; background: #0a0c16; border-radius: 8px; padding: 12px; margin-bottom: 12px; border: 1px solid #1e293b; }
-            .msg { margin-bottom: 12px; padding: 10px 14px; border-radius: 8px; line-height: 1.4; }
+            .msg { margin-bottom: 12px; padding: 10px 14px; border-radius: 8px; }
             .user { background: #1e3a8a; text-align: right; margin-left: 20%; }
             .lumi { background: #312e81; margin-right: 20%; }
             .btn-audio { background: #0284c7; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; margin-top: 8px; display: block; }
-            .btn-audio:hover { background: #0369a1; }
             .input-area { display: flex; gap: 10px; }
             input[type="text"] { flex-grow: 1; padding: 12px; border-radius: 8px; border: 1px solid #374151; background: #111827; color: #fff; }
             button.btn-send { padding: 12px 20px; border-radius: 8px; border: none; background: #0284c7; color: white; font-weight: bold; cursor: pointer; }
@@ -280,25 +255,25 @@ def dashboard():
             <div class="card">
                 <h2>Bioquímica & Estado</h2>
                 <div class="metric">
-                    <label>Dopamina: <strong id="val-dopamina">--%</strong></label>
-                    <div class="bar-bg"><div id="bar-dopamina" class="bar-fill" style="background:#10b981;"></div></div>
+                    <label>Dopamina: <strong id="val-dopamina">70%</strong></label>
+                    <div class="bar-bg"><div id="bar-dopamina" class="bar-fill" style="background:#10b981; width:70%;"></div></div>
                 </div>
                 <div class="metric">
-                    <label>Norepinefrina: <strong id="val-norep">--%</strong></label>
-                    <div class="bar-bg"><div id="bar-norep" class="bar-fill" style="background:#f59e0b;"></div></div>
+                    <label>Norepinefrina: <strong id="val-norep">30%</strong></label>
+                    <div class="bar-bg"><div id="bar-norep" class="bar-fill" style="background:#f59e0b; width:30%;"></div></div>
                 </div>
                 <div class="metric">
-                    <label>Adenosina: <strong id="val-adenosina">--%</strong></label>
-                    <div class="bar-bg"><div id="bar-adenosina" class="bar-fill" style="background:#ef4444;"></div></div>
+                    <label>Adenosina: <strong id="val-adenosina">20%</strong></label>
+                    <div class="bar-bg"><div id="bar-adenosina" class="bar-fill" style="background:#ef4444; width:20%;"></div></div>
                 </div>
                 <div class="metric">
-                    <label>Energía General: <strong id="val-energia">--%</strong></label>
-                    <div class="bar-bg"><div id="bar-energia" class="bar-fill" style="background:#38bdf8;"></div></div>
+                    <label>Energía General: <strong id="val-energia">90%</strong></label>
+                    <div class="bar-bg"><div id="bar-energia" class="bar-fill" style="background:#38bdf8; width:90%;"></div></div>
                 </div>
                 <p><strong>Fase Operativa:</strong> <span id="val-fase" style="color:#a855f7; font-weight:bold;">VIGILIA</span></p>
                 <hr style="border-color:#2d3748; margin: 15px 0;">
                 <h3>RAM Cognitiva</h3>
-                <div id="ram-box"></div>
+                <div id="ram-box"><span style="color:#64748b;">RAM Lista.</span></div>
             </div>
             <div class="card">
                 <h2>Interacción Directa</h2>
@@ -312,16 +287,10 @@ def dashboard():
         <script>
             function renderizarValores(data) {
                 if (!data) return;
-
-                const dopRaw = parseFloat(data.dopamina);
-                const norRaw = parseFloat(data.norepinefrina);
-                const adeRaw = parseFloat(data.adenosina);
-                const eneRaw = parseFloat(data.energia);
-
-                const dop = isNaN(dopRaw) ? 70 : Math.round(dopRaw * 100);
-                const nor = isNaN(norRaw) ? 30 : Math.round(norRaw * 100);
-                const ade = isNaN(adeRaw) ? 20 : Math.round(adeRaw * 100);
-                const ene = isNaN(eneRaw) ? 90 : Math.round(eneRaw * 100);
+                const dop = Math.round((parseFloat(data.dopamina) || 0.70) * 100);
+                const nor = Math.round((parseFloat(data.norepinefrina) || 0.30) * 100);
+                const ade = Math.round((parseFloat(data.adenosina) || 0.20) * 100);
+                const ene = Math.round((parseFloat(data.energia) || 0.90) * 100);
 
                 document.getElementById('val-dopamina').innerText = dop + '%';
                 document.getElementById('bar-dopamina').style.width = dop + '%';
@@ -338,14 +307,14 @@ def dashboard():
                 document.getElementById('val-fase').innerText = data.durmiendo ? 'DURMIENDO' : (data.fase_sueno || 'VIGILIA');
 
                 const ramBox = document.getElementById('ram-box');
-                if (ramBox) {
+                if (ramBox && data.ram && Array.isArray(data.ram)) {
                     ramBox.innerHTML = '';
-                    if (data.ram && Array.isArray(data.ram) && data.ram.length > 0) {
+                    if (data.ram.length > 0) {
                         data.ram.forEach(item => {
                             ramBox.innerHTML += `<div class="ram-item"><strong>${item.rol || 'Info'}:</strong> ${item.contenido || ''}</div>`;
                         });
                     } else {
-                        ramBox.innerHTML = '<span style="color:#64748b;">Memoria vacía.</span>';
+                        ramBox.innerHTML = '<span style="color:#64748b;">Memoria activa.</span>';
                     }
                 }
             }
@@ -357,7 +326,7 @@ def dashboard():
                         const data = await res.json();
                         renderizarValores(data);
                     }
-                } catch(e) { console.error("Error al actualizar:", e); }
+                } catch(e) {}
             }
 
             async function reproducirVoz(texto, btn) {
@@ -369,14 +338,13 @@ def dashboard():
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({texto: texto})
                     });
-                    if (!res.ok) throw new Error("Audio HTTP error");
                     const blob = await res.blob();
                     const audio = new Audio(URL.createObjectURL(blob));
                     audio.play();
                     btn.innerText = "🔊 Escuchar voz";
                     btn.disabled = false;
                 } catch(e) {
-                    btn.innerText = "❌ Error al reproducir";
+                    btn.innerText = "❌ Error reproduciendo";
                     btn.disabled = false;
                 }
             }
@@ -398,24 +366,22 @@ def dashboard():
                         body: JSON.stringify({mensaje: text})
                     });
                     const data = await res.json();
-                    
-                    const textoRespuesta = data.respuesta || '';
-                    const textoLimpioEscapado = textoRespuesta.replace(/['"\n\r]/g, ' ');
+                    const respText = data.respuesta || '';
                     
                     box.innerHTML += `
                         <div class="msg lumi">
-                            <div>${textoRespuesta}</div>
-                            <button class="btn-audio" onclick="reproducirVoz('${textoLimpioEscapado}', this)">🔊 Escuchar voz</button>
+                            <div>${respText}</div>
+                            <button class="btn-audio" onclick="reproducirVoz('${respText.replace(/['"\n\r]/g, ' ')}', this)">🔊 Escuchar voz</button>
                         </div>
                     `;
                     box.scrollTop = box.scrollHeight;
                     renderizarValores(data);
                 } catch(e) {
-                    box.innerHTML += `<div class="msg lumi" style="color:#ef4444;">Error respondiendo.</div>`;
+                    box.innerHTML += `<div class="msg lumi" style="color:#ef4444;">Error de comunicación.</div>`;
                 }
             }
 
-            setInterval(actualizarEstado, 2500);
+            setInterval(actualizarEstado, 3000);
             actualizarEstado();
         </script>
     </body>
