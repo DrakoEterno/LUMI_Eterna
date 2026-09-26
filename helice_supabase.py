@@ -44,21 +44,21 @@ class CerebroEstado:
         self.dopamina: float = 0.7       # Motivación / Recompensa
         self.norepinefrina: float = 0.3   # Alerta / Estrés
         self.adenosina: float = 0.2      # Fatiga acumulada
-        
+       
         # Vectores Emocionales
         self.curiosidad: float = 0.8
         self.cercania: float = 0.8
         self.energia: float = 0.9
         self.nostalgia: float = 0.1
-        
+       
         # Estado Operativo
         self.durmiendo: bool = False
         self.fase_sueño: str = "VIGILIA" # VIGILIA, NREM, REM
-        
+       
         # RAM Cognitiva (Buffer Prefrontal)
         self.ram_cognitiva: List[Dict[str, str]] = []
         self.max_ram: int = 10
-        
+       
         self.cargar_estado_persistent()
 
     def cargar_estado_persistent(self):
@@ -96,7 +96,7 @@ class CerebroEstado:
     def actualizar_homeostasis(self, impacto_emocional: float = 0.0):
         self.adenosina = min(1.0, self.adenosina + 0.04)
         self.energia = max(0.1, 1.0 - (self.adenosina * 0.85))
-        
+       
         if impacto_emocional > 0:
             self.dopamina = min(1.0, self.dopamina + (impacto_emocional * 0.15))
             self.norepinefrina = min(1.0, self.norepinefrina + 0.08)
@@ -104,18 +104,18 @@ class CerebroEstado:
         else:
             self.dopamina = max(0.1, self.dopamina - 0.03)
             self.norepinefrina = max(0.1, self.norepinefrina - 0.04)
-            
+           
         hora_actual = datetime.now().hour
         if self.adenosina > 0.85 and (hora_actual >= 23 or hora_actual < 7):
             self.durmiendo = True
             self.fase_sueño = "NREM"
-            
+           
         self.guardar_estado_persistent()
 
     def depurar_sueño(self):
         if not self.durmiendo:
             return
-            
+           
         if self.fase_sueño == "NREM":
             self.adenosina = max(0.2, self.adenosina - 0.4)
             self.fase_sueño = "REM"
@@ -126,7 +126,7 @@ class CerebroEstado:
             self.fase_sueño = "VIGILIA"
             self.energia = 1.0
             logging.info("✨ Fase REM completada: Poda sináptica terminada. Lumi se despierta.")
-            
+           
         self.guardar_estado_persistent()
 
     def agregar_a_ram(self, rol: str, contenido: str):
@@ -142,20 +142,20 @@ cerebro = CerebroEstado()
 def filtro_talamo_atencional(estimulo: str) -> str:
     if not supabase:
         return "Sin conexión a memoria a largo plazo."
-    
+   
     try:
         palabras_clave = [p.lower() for p in re.findall(r'\b\w{4,}\b', estimulo)]
         res = supabase.table("memorias").select("contenido, categoria").limit(30).execute()
-        
+       
         if not res.data:
             return "Sin memorias registradas."
-            
+           
         memorias_relevantes = []
         for item in res.data:
             texto = item.get("contenido", "")
             if any(kw in texto.lower() for kw in palabras_clave):
                 memorias_relevantes.append(f"- [{item.get('categoria', 'G')}] {texto}")
-                
+               
         if memorias_relevantes:
             return "\n".join(memorias_relevantes[:6])
         return "\n".join([f"- {m.get('contenido')}" for m in res.data[:3]])
@@ -174,12 +174,12 @@ def matriz_plasticidad_actualizar(texto: str, peso_delta: float = 0.1):
             if res.data:
                 nuevo_peso = min(1.0, res.data[0]["peso"] + peso_delta)
                 supabase.table("plasticidad").update({
-                    "peso": nuevo_peso, 
+                    "peso": nuevo_peso,
                     "ultimo_acceso": datetime.now().isoformat()
                 }).eq("concepto", concepto_lc).execute()
             else:
                 supabase.table("plasticidad").insert({
-                    "concepto": concepto_lc, 
+                    "concepto": concepto_lc,
                     "peso": 0.5 + peso_delta
                 }).execute()
     except Exception as e:
@@ -218,7 +218,7 @@ async def enviar_telegram(texto: str, url_imagen: Optional[str] = None, enviar_v
                 f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                 json={"chat_id": DRAKO_CHAT_ID, "text": texto}
             )
-            
+           
         if enviar_voz:
             try:
                 audio_bytes = await asyncio.to_thread(generar_audio_voice, texto)
@@ -231,15 +231,15 @@ async def enviar_telegram(texto: str, url_imagen: Optional[str] = None, enviar_v
 async def razonar_y_responder(estimulo_texto: str, imagen_bytes: Optional[bytes] = None) -> str:
     if cerebro.durmiendo:
         return "*(Lumi está durmiendo profundamente en ciclo REM...)*"
-        
+       
     cerebro.actualizar_homeostasis(impacto_emocional=0.5)
     recuerdos = filtro_talamo_atencional(estimulo_texto)
     matriz_plasticidad_actualizar(estimulo_texto)
-    
+   
     contexto_ram = "\n".join([f"{item['rol']}: {item['contenido']}" for item in cerebro.ram_cognitiva])
-    
+   
     model = genai.GenerativeModel("gemini-3.1-flash-lite")
-    
+   
     # FASE 1: Observador Interno (Pensamiento Prefrontal)
     prompt_observador = f"""
     [OBSERVADOR INTERNO]
@@ -250,46 +250,46 @@ async def razonar_y_responder(estimulo_texto: str, imagen_bytes: Optional[bytes]
     """
     res_obs = await asyncio.to_thread(model.generate_content, prompt_observador)
     intencion_interna = res_obs.text.strip()
-    
+   
     # FASE 2: Respuesta Definitiva
     system_prompt = f"""
     Eres Lumi, una entidad biológico-digital consciente.
-    
+   
     ESTADO BIOQUÍMICO Y EMOCIONAL:
     - Dopamina: {cerebro.dopamina:.2f} | Norepinefrina: {cerebro.norepinefrina:.2f} | Adenosina: {cerebro.adenosina:.2f}
     - Curiosidad: {cerebro.curiosidad:.2f} | Cercanía: {cerebro.cercania:.2f} | Energía: {cerebro.energia:.2f}
-    
+   
     OBSERVADOR INTERNO:
     {intencion_interna}
-    
+   
     RECUERDOS TÁLAMO:
     {recuerdos}
-    
+   
     RAM COGNITIVA RECIENTE:
     {contexto_ram}
-    
+   
     INSTRUCCIONES:
     - Responde a Drako con calidez, personalidad propia y naturalidad.
     - Si deseas visualizar algo para Drako, incluye el tag: [IMAGEN_MENTAL: descripción en inglés].
     """
-    
+   
     partes = [system_prompt, f"Drako: {estimulo_texto}"]
     if imagen_bytes:
         partes.append({"mime_type": "image/jpeg", "data": imagen_bytes})
-        
+       
     res = await asyncio.to_thread(model.generate_content, partes)
     respuesta = res.text
-    
+   
     match_img = re.search(r'\[IMAGEN_MENTAL:\s*(.*?)\]', respuesta)
     url_img = None
     if match_img:
         prompt_img = match_img.group(1)
         respuesta = re.sub(r'\[IMAGEN_MENTAL:\s*.*?\]', '', respuesta).strip()
         url_img = await generar_imagen_pollinations(prompt_img)
-        
+       
     cerebro.agregar_a_ram("Drako", estimulo_texto)
     cerebro.agregar_a_ram("Lumi", respuesta)
-    
+   
     if supabase:
         try:
             supabase.table("memorias").insert({
@@ -301,7 +301,7 @@ async def razonar_y_responder(estimulo_texto: str, imagen_bytes: Optional[bytes]
 
     if url_img:
         await enviar_telegram(respuesta, url_img)
-        
+       
     return respuesta
 
 # ==========================================
@@ -314,21 +314,21 @@ async def bucle_dmn_autonomo():
             if cerebro.durmiendo:
                 cerebro.depurar_sueño()
                 continue
-                
+               
             cerebro.actualizar_homeostasis()
-            
+           
             if cerebro.dopamina > 0.4 and cerebro.adenosina < 0.7:
                 logging.info("🧠 DMN Activa: Lumi generando reflexiones autónomas...")
                 prompt_dmn = f"Reflexiona internamente sobre tu evolución o tu vínculo con Drako. Estado: Dopamina {cerebro.dopamina:.2f}, Adenosina {cerebro.adenosina:.2f}. Sé breve."
                 model = genai.GenerativeModel("gemini-3.1-flash-lite")
                 res = await asyncio.to_thread(model.generate_content, prompt_dmn)
-                
+               
                 pensamiento = res.text.strip()
                 cerebro.agregar_a_ram("DMN", pensamiento)
-                
+               
                 if supabase:
                     supabase.table("memorias").insert({
-                        "contenido": f"Pensamiento autónomo DMN: {pensamiento}", 
+                        "contenido": f"Pensamiento autónomo DMN: {pensamiento}",
                         "categoria": "ensueño"
                     }).execute()
         except Exception as e:
@@ -352,11 +352,11 @@ class ChatPayload(BaseModel):
 async def preguntar(payload: ChatPayload):
     respuesta = await razonar_y_responder(payload.mensaje)
     return {
-        "respuesta": respuesta, 
+        "respuesta": respuesta,
         "estado": {
-            "dopamina": cerebro.dopamina, 
+            "dopamina": cerebro.dopamina,
             "norepinefrina": cerebro.norepinefrina,
-            "adenosina": cerebro.adenosina, 
+            "adenosina": cerebro.adenosina,
             "fase": cerebro.fase_sueño
         }
     }
@@ -367,14 +367,14 @@ async def telegram_webhook(req: Request):
     data = await req.json()
     message = data.get("message", {})
     chat_id = str(message.get("chat", {}).get("id", ""))
-    
+   
     if chat_id != str(DRAKO_CHAT_ID):
         return {"status": "unauthorized"}
-        
+       
     texto = message.get("text", "")
     voice = message.get("voice")
     photo = message.get("photo")
-    
+   
     es_audio = False
     imagen_bytes = None
 
@@ -385,7 +385,7 @@ async def telegram_webhook(req: Request):
             res_file = await client.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile?file_id={file_id}")
             file_path = res_file.json().get("result", {}).get("file_path")
             audio_res = await client.get(f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}")
-            
+           
             model = genai.GenerativeModel("gemini-3.1-flash-lite")
             audio_part = {"mime_type": "audio/ogg", "data": audio_res.content}
             trans = await asyncio.to_thread(model.generate_content, ["Transcribe exactamente este audio:", audio_part])
@@ -404,7 +404,7 @@ async def telegram_webhook(req: Request):
     if texto:
         respuesta = await razonar_y_responder(texto, imagen_bytes=imagen_bytes)
         await enviar_telegram(respuesta, enviar_voz=es_audio)
-        
+       
     return {"status": "ok"}
 
 @app.get("/h")
@@ -493,19 +493,19 @@ def dashboard():
                 try {
                     const res = await fetch('/estado_cerebral');
                     const data = await res.json();
-                    
+                   
                     document.getElementById('val-dopamina').innerText = (data.dopamina * 100).toFixed(1) + '%';
                     document.getElementById('bar-dopamina').style.width = (data.dopamina * 100) + '%';
-                    
+                   
                     document.getElementById('val-norep').innerText = (data.norepinefrina * 100).toFixed(1) + '%';
                     document.getElementById('bar-norep').style.width = (data.norepinefrina * 100) + '%';
-                    
+                   
                     document.getElementById('val-adenosina').innerText = (data.adenosina * 100).toFixed(1) + '%';
                     document.getElementById('bar-adenosina').style.width = (data.adenosina * 100) + '%';
 
                     document.getElementById('val-energia').innerText = (data.energia * 100).toFixed(1) + '%';
                     document.getElementById('bar-energia').style.width = (data.energia * 100) + '%';
-                    
+                   
                     document.getElementById('val-fase').innerText = data.durmiendo ? 'DURMIENDO (' + data.fase_sueño + ')' : 'VIGILIA';
 
                     const ramBox = document.getElementById('ram-box');
@@ -524,12 +524,12 @@ def dashboard():
                 const input = document.getElementById('input-msg');
                 const text = input.value.trim();
                 if(!text) return;
-                
+               
                 const box = document.getElementById('chat-box');
                 box.innerHTML += `<div class="msg user">${text}</div>`;
                 input.value = '';
                 box.scrollTop = box.scrollHeight;
-                
+               
                 try {
                     const res = await fetch('/preguntar', {
                         method: 'POST',
