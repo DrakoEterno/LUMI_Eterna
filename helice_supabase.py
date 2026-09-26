@@ -192,7 +192,8 @@ async def generar_imagen_pollinations(prompt: str) -> Optional[str]:
         return None
 
 def generar_audio_voice(texto: str) -> bytes:
-    texto_limpio = re.sub(r'\[IMAGEN_MENTAL:\s*.*?\]', '', texto).strip()
+    texto_limpio = re.sub(r'\[IMAGEN_MENTAL:\s*.*?\]', '', texto)
+    texto_limpio = re.sub(r'[*_~`#]', '', texto_limpio).strip()
     tts = gTTS(text=texto_limpio, lang='es', tld='es')
     fp = io.BytesIO()
     tts.write_to_fp(fp)
@@ -202,7 +203,8 @@ def generar_audio_voice(texto: str) -> bytes:
 async def enviar_telegram(texto: str, url_imagen: Optional[str] = None, enviar_voz: bool = True):
     if not TELEGRAM_BOT_TOKEN or not DRAKO_CHAT_ID:
         return
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        # Enviar texto o foto con descripción
         if url_imagen:
             await client.post(
                 f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto",
@@ -214,6 +216,7 @@ async def enviar_telegram(texto: str, url_imagen: Optional[str] = None, enviar_v
                 json={"chat_id": DRAKO_CHAT_ID, "text": texto}
             )
             
+        # Enviar nota de voz adjunta en Telegram
         if enviar_voz:
             try:
                 audio_bytes = await asyncio.to_thread(generar_audio_voice, texto)
@@ -293,7 +296,7 @@ async def razonar_y_responder(estimulo_texto: str, imagen_bytes: Optional[bytes]
             logging.error(f"Error guardando en memoria: {e}")
 
     if url_img:
-        await enviar_telegram(respuesta, url_img)
+        await enviar_telegram(respuesta, url_img, enviar_voz=True)
         
     return respuesta
 
@@ -339,7 +342,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Lumi - Cerebro Digital Total Definitivo", lifespan=lifespan)
 
 # ==========================================
-# 6. ENDPOINTS Y TELEGRAM WEBHOOK
+# 6. ENDPOINTS Y TELEGRAM WEBHOOK (OPTIMIZADO SIN DUPLICADOS)
 # ==========================================
 class ChatPayload(BaseModel):
     mensaje: str
@@ -365,9 +368,20 @@ async def preguntar(payload: ChatPayload):
         }
     }
 
+async def procesar_y_responder_telegram(t: str, img: Optional[bytes], voz: bool):
+    try:
+        respuesta = await razonar_y_responder(t, imagen_bytes=img)
+        await enviar_telegram(respuesta, enviar_voz=voz)
+    except Exception as e:
+        logging.error(f"Error procesando mensaje de Telegram en segundo plano: {e}")
+
 @app.post("/telegram/webhook")
 async def telegram_webhook(req: Request, background_tasks: BackgroundTasks):
-    data = await req.json()
+    try:
+        data = await req.json()
+    except Exception:
+        return {"status": "bad request"}
+        
     message = data.get("message", {})
     chat_id = str(message.get("chat", {}).get("id", ""))
     
@@ -402,13 +416,9 @@ async def telegram_webhook(req: Request, background_tasks: BackgroundTasks):
             if not texto:
                 texto = "[El usuario envió una imagen]"
 
-    async def procesar_y_responder(t: str, img: Optional[bytes], voz: bool):
-        respuesta = await razonar_y_responder(t, imagen_bytes=img)
-        await enviar_telegram(respuesta, enviar_voz=voz)
-
     if texto:
-        # Se pasa True en enviar_voz para que SIEMPRE envíe la nota de voz a Telegram
-        background_tasks.add_task(procesar_y_responder, texto, imagen_bytes, True)
+        # Se envía a segundo plano e inmediatamente se le responde 200 OK a Telegram
+        background_tasks.add_task(procesar_y_responder_telegram, texto, imagen_bytes, True)
         
     return {"status": "ok"}
 
