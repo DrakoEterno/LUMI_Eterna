@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 httpx
+pydantic
 supabase
-google-genai
-edge-tts
-tzdata
+gTTS
+google-generativeai
