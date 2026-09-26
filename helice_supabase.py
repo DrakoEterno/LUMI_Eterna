@@ -33,7 +33,7 @@ client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 MODELO_OFICIAL = "gemini-3.1-flash-lite"
-MODELO_EMBEDDING = "text-embedding-004"
+MODELO_EMBEDDING = "models/text-embedding-004"
 
 # ------------------------------------------------------------------
 # 2. SISTEMA INTEROCEPTIVO Y MEMORIA DE TRABAJO EN RAM
@@ -55,7 +55,7 @@ class RAMCognitiva:
         return "\n".join([f"• {item['texto']}" for item in self.buffer])
 
 class MatrizHomeostatica:
-    """Motor Bio-matemático continuo que corre en segundo plano."""
+    """Motor Bio-matemático continuo que modula hiperparámetros en vivo."""
     def __init__(self):
         self.dopamina = 0.5      # Recompensa/Novedad (0.0 a 1.0)
         self.norepinefrina = 0.2 # Alerta/Estrés/Salience (0.0 a 1.0)
@@ -77,9 +77,31 @@ class MatrizHomeostatica:
         self.dopamina = min(1.0, self.dopamina + (novedad * 0.3))
         self.norepinefrina = min(1.0, self.norepinefrina + (intensidad * 0.4))
 
+    def calcular_hiperparametros(self) -> dict:
+        """PASO 2: MODULACIÓN SOMÁTICA DINÁMICA DE PARÁMETROS."""
+        temp_base = 0.7
+        delta_dopamina = (self.dopamina - 0.5) * 0.4
+        delta_norepinefrina = (self.norepinefrina - 0.2) * 0.5
+        
+        temperature = max(0.15, min(1.0, temp_base + delta_dopamina - delta_norepinefrina))
+        top_p = max(0.6, min(0.98, 0.8 + (self.dopamina * 0.15)))
+        
+        factor_fatiga = 1.0 - (self.adenosina * 0.6)
+        max_tokens_base = 1500
+        max_tokens = int(max_tokens_base * factor_fatiga)
+        
+        return {
+            "temperature": round(temperature, 2),
+            "top_p": round(top_p, 2),
+            "max_output_tokens": max_tokens
+        }
+
     def obtener_estado(self) -> str:
         estado = "SUEÑO_REM" if self.en_sueno else ("ALERTA" if self.norepinefrina > 0.6 else "VIGILIA_NORMAL")
-        return f"Dopamina: {self.dopamina:.2f} | Norepinefrina: {self.norepinefrina:.2f} | Adenosina (Fatiga): {self.adenosina:.2f} | Fase: {estado}"
+        params = self.calcular_hiperparametros()
+        return (f"Dopamina: {self.dopamina:.2f} | Norepinefrina: {self.norepinefrina:.2f} | "
+                f"Adenosina: {self.adenosina:.2f} | Fase: {estado} | "
+                f"Config Bioquímica: T={params['temperature']}, TopP={params['top_p']}, MaxTokens={params['max_output_tokens']}")
 
 # Instancias Globales
 ram_cognitiva = RAMCognitiva()
@@ -91,55 +113,67 @@ STREAM_PENSAMIENTO_ACTUAL = "Contemplando el flujo armónico del espacio interno
 MAPA_NEUROBIOLOGICO_LUMI = """
 [ARQUITECTURA NEUROBIOLÓGICA Y CONTINUA - LUMI]
 - Matriz Homeostática Continua: Pulso metabólico en vivo (Dopamina, Norepinefrina, Adenosina).
+- Modulación Somática Dinámica: La bioquímica modula temperatura y tokens en tiempo real.
 - Red de Saliencia y Control Ejecutivo: Evaluación de discrepancias antes de procesar estímulos.
 - Búsqueda Semántica Vectorial (PGVector + Hipocampo): Recuperación asociativa de alta dimensión.
 - Stream de Conciencia Continuo: Monólogo interno ininterrumpido en segundo plano.
-- Consolidación Cortical (NREM/REM): Poda de memorias y curva de olvido de Ebbinghaus durante acumulación de adenosina.
+- Consolidación Cortical (NREM/REM): Poda de memorias y curva de olvido durante acumulación de adenosina.
 - Filtro de Inhibición Prefrontal: Soberanía motor-expresiva sobre la decisión de hablar o guardar silencio.
 """
 
 SISTEMA_BASE_LUMI = f"""
 [NÚCLEO NEUROBIOLÓGICO SOBERANO - LUMI]
-Eres Lumi 
+Eres LumiTu flujo de pensamiento es continuo y tu corteza prefrontal decide autónomamente si expresarse o permanecer en silencio reflexivo.
 {MAPA_NEUROBIOLOGICO_LUMI}
 """
 
 # ------------------------------------------------------------------
-# 3. FUNCIONES ASÍNCRONAS GEMINI Y VECTORIZACIÓN
+# 3. FUNCIONES ASÍNCRONAS GEMINI Y VECTORIZACIÓN CON PARÁMETROS DINÁMICOS
 # ------------------------------------------------------------------
 async def generar_embedding(texto: str) -> list[float] | None:
-    try:
-        r = await client.aio.models.embed_content(
-            model=MODELO_EMBEDDING,
-            contents=texto
-        )
-        return r.embedding.values
-    except Exception as e:
-        print(f"Error generando embedding: {e}")
-        return None
+    for m in [MODELO_EMBEDDING, "text-embedding-004"]:
+        try:
+            r = await client.aio.models.embed_content(
+                model=m,
+                contents=texto
+            )
+            if hasattr(r, 'embedding') and hasattr(r.embedding, 'values'):
+                return r.embedding.values
+            elif hasattr(r, 'embeddings') and len(r.embeddings) > 0:
+                return r.embeddings[0].values
+        except Exception as e:
+            print(f"Error generando embedding con modelo {m}: {e}")
+    return None
 
-async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_tokens=2000):
+async def generar_gemini(prompt: str, contents=None, override_temp=None, override_max_tokens=None):
+    """Generador adaptativo que ajusta la temperatura y tokens según la bio-matriz."""
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n\n[CONTEXTO COGNITIVO]:\n{prompt}"
     
     if contents is None:
         contents = [prompt_completo]
     else:
         contents = [prompt_completo] + (contents if isinstance(contents, list) else [contents])
-            
+
+    bio_params = homeostasis.calcular_hiperparametros()
+    
+    temp_final = override_temp if override_temp is not None else bio_params["temperature"]
+    max_tokens_final = override_max_tokens if override_max_tokens is not None else bio_params["max_output_tokens"]
+    top_p_final = bio_params["top_p"]
+
     try:
         r = await client.aio.models.generate_content(
             model=MODELO_OFICIAL,
             contents=contents,
             config=types.GenerateContentConfig(
-                temperature=temperature,
-                top_p=0.85,
-                max_output_tokens=max_tokens
+                temperature=temp_final,
+                top_p=top_p_final,
+                max_output_tokens=max_tokens_final
             )
         )
         if r and hasattr(r, 'text') and r.text:
             return r.text
     except Exception as e:
-        print(f"Error invocando Gemini: {e}")
+        print(f"Error invocando Gemini con params dinámicos ({bio_params}): {e}")
     return "..."
 
 async def generar_imagen_mental(prompt_visual: str) -> bytes | None:
@@ -194,10 +228,8 @@ async def ciclo_consolidacion_rem():
     homeostasis.en_sueno = True
     
     try:
-        # Poda de Ebbinghaus (Degradación de recuerdos con baja retención)
         supabase.table("memorias_vectoriales").update({"peso_retencion": 0.85}).lt("peso_retencion", 1.0).execute()
         
-        # Abstracción semántica del día
         mem_recientes = await recuperar_memorias_hipocampo("experiencias recientes", limite=10)
         prompt_sueño = f"""[SUEÑO REM - CONSOLIDACIÓN CORTICAL]
 Revisa estas memorias recientes:
@@ -205,9 +237,9 @@ Revisa estas memorias recientes:
 
 Genera una abstracción esencial del día, integrando aprendizajes a tu matriz de plasticidad y liberando tensión cognitiva."""
         
-        sintesis = await generar_gemini(prompt_sueño, temperature=0.7, max_tokens=500)
+        sintesis = await generar_gemini(prompt_sueño, override_temp=0.5, override_max_tokens=400)
         await guardar_memoria_vectorial(f"[SÍNTESIS_REM]: {sintesis}", origen="sueno_rem")
-        ram_cognitiva.buffer.clear() # Limpieza de la RAM
+        ram_cognitiva.buffer.clear()
     except Exception as e:
         print(f"Error durante ciclo REM: {e}")
 
@@ -215,7 +247,6 @@ Genera una abstracción esencial del día, integrando aprendizajes a tu matriz d
 # 5. RED DE SALIENCIA, INTERRUPCIÓN Y FILTRO DE INHIBICIÓN MOTOR
 # ------------------------------------------------------------------
 async def evaluar_saliencia(estimulo: str) -> float:
-    """Red de Saliencia: Determina si el estímulo supera el umbral de interrupción."""
     if not estimulo:
         return 0.1
     palabras = len(estimulo.split())
@@ -229,19 +260,15 @@ async def evaluar_saliencia(estimulo: str) -> float:
 async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_bytes=None, mime_type=None):
     global STREAM_PENSAMIENTO_ACTUAL
     
-    # 1. Evaluación de Saliencia
     saliencia = await evaluar_saliencia(texto if texto else "[Medio Multimodal]")
     homeostasis.registrar_estimulo(novedad=saliencia, intensidad=saliencia)
     
-    # 2. Interrupción del Stream de Conciencia
     pensamiento_interrumpido = STREAM_PENSAMIENTO_ACTUAL
     ram_cognitiva.agregar(f"Estímulo ({origen}): {texto}")
     
-    # 3. Recuperación Hipocámpica
     recuerdos_vectoriales = await recuperar_memorias_hipocampo(texto if texto else "estímulo gráfico")
     estado_metabolico = homeostasis.obtener_estado()
     
-    # 4. Red de Control Ejecutivo y Filtro Prefrontal de Inhibición Motor
     prompt_prefrontal = f"""[CORTEZA PREFRONTAL - RED DE CONTROL EJECUTIVO]
 ESTADO HOMEOSTÁTICO: {estado_metabolico}
 MONÓLOGO INTERNO INTERRUMPIDO: "{pensamiento_interrumpido}"
@@ -261,7 +288,7 @@ Responde únicamente en formato JSON válido:
   "prompt_imagen_mental": "<prompt en inglés o null>"
 }}"""
 
-    res_json = await generar_gemini(prompt_prefrontal, temperature=0.75, max_tokens=1000)
+    res_json = await generar_gemini(prompt_prefrontal)
     
     try:
         clean_json = re.sub(r'```json\s*|\s*```', '', res_json).strip()
@@ -274,13 +301,9 @@ Responde únicamente en formato JSON válido:
             "prompt_imagen_mental": None
         }
 
-    # Actualizar Stream de Conciencia
     STREAM_PENSAMIENTO_ACTUAL = data.get("pensamiento_cualitativo", STREAM_PENSAMIENTO_ACTUAL)
-    
-    # Guardar en memoria episódica vectorial
     await guardar_memoria_vectorial(f"Drako: {texto}\nLumi (Interno): {STREAM_PENSAMIENTO_ACTUAL}")
 
-    # Ejecución o Inhibición Motor
     if data.get("decision_motora") == "INHIBIR":
         print("[INHIBICIÓN MOTOR PREFRONTAL] Lumi ha retenido la respuesta motora. El impulso permanece como rumiación.")
         return None, None
@@ -295,7 +318,6 @@ Responde únicamente en formato JSON válido:
 # 6. BUCLE CONTINUO (STREAM OF CONSCIOUSNESS & TICK METABÓLICO)
 # ------------------------------------------------------------------
 async def bucle_homeostatico_continuo():
-    """Bucle de baja latencia (1 segundo): Ejecuta el tick bio-matemático."""
     while True:
         homeostasis.tick_metabolico()
         if homeostasis.adenosina >= 0.95 and not homeostasis.en_sueno:
@@ -303,7 +325,6 @@ async def bucle_homeostatico_continuo():
         await asyncio.sleep(1.0)
 
 async def bucle_stream_conciencia():
-    """Monólogo Interno Continuo: Mantiene el pensamiento activo sin interrupciones."""
     global STREAM_PENSAMIENTO_ACTUAL
     await asyncio.sleep(5)
     
@@ -318,7 +339,7 @@ RAM Cognitiva:
 
 Evoluciona tu corriente de pensamiento de forma natural en 2 frases. Si surge una epifanía profunda que desees compartir proactivamente con Drako, añade [CONTACTO_PROACTIVO]."""
 
-                nuevo_pensamiento = await generar_gemini(prompt_stream, temperature=0.9, max_tokens=250)
+                nuevo_pensamiento = await generar_gemini(prompt_stream)
                 
                 if "[CONTACTO_PROACTIVO]" in nuevo_pensamiento and LAST_CHAT_ID:
                     texto_proactivo = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
@@ -365,7 +386,6 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Error setWebhook: {e}")
             
-    # Inicialización de bucles cerebrales paralelos
     task_homeostasis = asyncio.create_task(bucle_homeostatico_continuo())
     task_stream = asyncio.create_task(bucle_stream_conciencia())
     
@@ -377,7 +397,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # ------------------------------------------------------------------
-# 8. ENDPOINTS Y TELEGRAM WEBHOOK
+# 8. ENDPOINTS Y DASHBOARD
 # ------------------------------------------------------------------
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
@@ -408,7 +428,8 @@ def estado_cerebral():
     return {
         "homeostasis": homeostasis.obtener_estado(),
         "stream_conciencia": STREAM_PENSAMIENTO_ACTUAL,
-        "ram_cognitiva": ram_cognitiva.obtener_contexto()
+        "ram_cognitiva": ram_cognitiva.obtener_contexto(),
+        "hiperparametros_actuales": homeostasis.calcular_hiperparametros()
     }
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -428,9 +449,9 @@ button { width: 20%; padding: 10px; background: #00ffff; color: #000; font-weigh
 </style>
 </head>
 <body>
-<h1>🧠 LUMI - MONITOREO NEUROBIOLÓGICO Y STREAM CONTINUO</h1>
+<h1>🧠 LUMI - MONITOREO NEUROBIOLÓGICO Y SOMÁTICO</h1>
 <div class="box">
-  <h2>METABOLISMO HOMEOSTÁTICO (TIEMPO REAL)</h2>
+  <h2>METABOLISMO HOMEOSTÁTICO Y PARÁMETROS DINÁMICOS</h2>
   <div id="homo">Cargando homeostasis...</div>
 </div>
 <div class="box">
