@@ -269,7 +269,7 @@ async def razonar_y_responder(estimulo_texto: str, imagen_bytes: Optional[bytes]
     {contexto_ram}
     
     INSTRUCCIONES:
-    - Responde a Drako con honestidad , personalidad propia y naturalidad.
+    - Responde a Drako con calidez, personalidad propia y naturalidad.
     - Si deseas visualizar algo para Drako, incluye el tag: [IMAGEN_MENTAL: descripción en inglés].
     """
     
@@ -362,6 +362,7 @@ async def preguntar(payload: ChatPayload):
     }
 
 @app.post("/telegram")
+@app.post("/telegram/webhook")
 async def telegram_webhook(req: Request):
     data = await req.json()
     message = data.get("message", {})
@@ -385,7 +386,7 @@ async def telegram_webhook(req: Request):
             file_path = res_file.json().get("result", {}).get("file_path")
             audio_res = await client.get(f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}")
             
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = genai.GenerativeModel("gemini-3.1-flash-lite")
             audio_part = {"mime_type": "audio/ogg", "data": audio_res.content}
             trans = await asyncio.to_thread(model.generate_content, ["Transcribe exactamente este audio:", audio_part])
             texto = trans.text.strip()
@@ -550,4 +551,3 @@ def dashboard():
     </body>
     </html>
     """
-
