@@ -32,9 +32,9 @@ RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://lumi-eterna.onrender.com"
 client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# MODELOS CONFIGURADOS
+# MODELOS CONFIGURADOS (Ruta completa ajustada para el SDK v2)
 MODELO_OFICIAL = "gemini-3.1-flash-lite"
-MODELO_EMBEDDING = "text-embedding-004"
+MODELO_EMBEDDING = "models/text-embedding-004"
 
 # Semáforo para controlar la concurrencia (Garantiza < 15 RPM)
 API_SEMAPHORE = asyncio.Semaphore(1)
@@ -237,16 +237,18 @@ async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=Non
 
 
 # ------------------------------------------------------------------
-# 5. MEMORIA VECTORIAL CON OLVIDO (DECAY) Y GRAFO
+# 5. MEMORIA VECTORIAL CON EMBEDDINGS PARCHEADOS
 # ------------------------------------------------------------------
 async def generar_embedding(texto: str) -> list[float] | None:
-    if not texto or len(texto.strip()) < 8:  # Optimización de cuota para frases ultra cortas
+    if not texto or len(texto.strip()) < 10:
         return None
 
     async with API_SEMAPHORE:
         for intento in range(3):
             try:
-                await asyncio.sleep(0.4 * (intento + 1))
+                # Pausa previa forzada para evitar el error 429 por ráfaga simultánea
+                await asyncio.sleep(1.2 * (intento + 1))
+                
                 r = await client.aio.models.embed_content(
                     model=MODELO_EMBEDDING,
                     contents=texto
@@ -256,18 +258,30 @@ async def generar_embedding(texto: str) -> list[float] | None:
                 elif hasattr(r, 'embeddings') and len(r.embeddings) > 0:
                     return list(r.embeddings[0].values)
             except Exception as e:
-                err_msg = str(e)
-                if "429" in err_msg:
-                    print(f"[REINTENTO EMBEDDING 429] Espere un momento... ({intento + 1}/3)")
+                err_str = str(e)
+                # Manejo del fallo 404 con fallback directo
+                if "404" in err_str:
+                    try:
+                        r = await client.aio.models.embed_content(
+                            model="text-embedding-004",
+                            contents=texto
+                        )
+                        if hasattr(r, 'embedding') and hasattr(r.embedding, 'values'):
+                            return list(r.embedding.values)
+                    except Exception:
+                        pass
+                    print(f"[ERROR EMBEDDING 404] El modelo no está disponible en tu API key/región.")
+                    break
+                elif "429" in err_str:
+                    print(f"[REINTENTO EMBEDDING 429] Pausa por cuotas ({intento + 1}/3)...")
                     await asyncio.sleep(3.0 * (intento + 1))
                 else:
-                    print(f"Error embedding ({MODELO_EMBEDDING}): {e}")
+                    print(f"Error embedding: {e}")
                     break
     return None
 
 
 async def guardar_memoria_emocional(texto: str, valencia: float, arousal: float, dominancia: float, origen="experiencia", es_ficcion=False):
-    # Ahorro de RPD: no guardar recuerdos de texto irrelevante
     if len(texto.strip()) < 12:
         return
 
@@ -314,7 +328,7 @@ async def recuperar_memorias_con_resonancia(estimulo: str, limite=4) -> str:
 
 
 # ------------------------------------------------------------------
-# 6. CICLOS DE SUEÑO Y PROCESAMIENTO PREFRONTAL
+# 6. SUEÑO Y PROCESAMIENTO MULTIMODAL CON TELEGRAM PARCHEADO
 # ------------------------------------------------------------------
 async def ciclo_sueno_trifasico():
     print("[SUEÑO] Fase NREM: Aplicando Curva del Olvido (Decay)...")
@@ -348,7 +362,6 @@ async def procesar_estimulo_multimodal(texto: str, origen="telegram"):
     
     ram_cognitiva.agregar(f"Drako: {texto}")
     
-    # Recuperar recuerdos únicamente si la consulta es lo suficientemente larga
     recuerdos = await recuperar_memorias_con_resonancia(texto) if len(texto) >= 8 else "Sin memorias asociadas."
     
     if len(texto) < 15 and ("!" in texto or "?" in texto):
@@ -421,7 +434,47 @@ Responde exclusivamente en formato JSON estricto:
 
 
 # ------------------------------------------------------------------
-# 7. BUCLES AUTÓNOMOS Y LIFESPAN
+# 7. ENVÍO DE MENSAJES Y VOZ PARCHEADO
+# ------------------------------------------------------------------
+async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
+    if not texto or not texto.strip():
+        return
+
+    async with httpx.AsyncClient(timeout=30.0) as http_client:
+        if bytes_imagen_mental:
+            files = {"photo": ("visio.jpg", bytes_imagen_mental, "image/jpeg")}
+            await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", data={"chat_id": str(chat_id)}, files=files)
+
+        payload = {"chat_id": str(chat_id), "text": texto, "parse_mode": "Markdown"}
+        await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json=payload)
+
+        try:
+            # Limpieza profunda de sintaxis Markdown para evitar audios vacíos en edge-tts
+            texto_limpio = re.sub(r'[*_`#\[\]\(\)]', '', texto)
+            texto_limpio = re.sub(r'[^\w\s,.!?ÁÉÍÓÚáéíóúÑñ]', '', texto_limpio).strip()
+            
+            if texto_limpio:
+                rate_str = "+15%" if homeostasis.norepinefrina > 0.6 else ("-15%" if homeostasis.adenosina > 0.6 else "+0%")
+                comunicador = edge_tts.Communicate(texto_limpio, "es-ES-ElviraNeural", rate=rate_str)
+                audio_buffer = io.BytesIO()
+                
+                async for chunk in comunicador.stream():
+                    if chunk["type"] == "audio":
+                        audio_buffer.write(chunk["data"])
+                
+                audio_bytes = audio_buffer.getvalue()
+                if len(audio_bytes) > 0:
+                    audio_buffer.seek(0)
+                    files = {"voice": ("voice.ogg", audio_buffer, "audio/ogg")}
+                    await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice", data={"chat_id": str(chat_id)}, files=files)
+                else:
+                    print("[VOZ] Sintetizador generó 0 bytes, se omite nota de voz.")
+        except Exception as e:
+            print(f"Error voz: {e}")
+
+
+# ------------------------------------------------------------------
+# 8. BUCLES AUTÓNOMOS Y LIFESPAN
 # ------------------------------------------------------------------
 async def bucle_homeostatico_continuo():
     contador_checkpoint = 0
@@ -463,41 +516,11 @@ Usa pseudocódigo comprimido [EVAL: ...] -> [IMPACTO: ...] para evolucionar tu i
                     
                 STREAM_PENSAMIENTO_ACTUAL = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
                 
-            # OPTIMIZACIÓN FREE TIER (15 RPM / 500 RPD):
-            # Se ajusta la rumiación pasiva a 30-60 min (1800-3600s) para consumir solo ~24-48 RPD
             espera = random.randint(1800, 3600)
             await asyncio.sleep(espera)
         except Exception as e:
             print(f"Error stream: {e}")
             await asyncio.sleep(300)
-
-
-async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
-    if not texto or not texto.strip():
-        return
-
-    async with httpx.AsyncClient(timeout=30.0) as http_client:
-        if bytes_imagen_mental:
-            files = {"photo": ("visio.jpg", bytes_imagen_mental, "image/jpeg")}
-            await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", data={"chat_id": str(chat_id)}, files=files)
-
-        payload = {"chat_id": str(chat_id), "text": texto, "parse_mode": "Markdown"}
-        await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json=payload)
-
-        try:
-            texto_limpio = re.sub(r'[^\w\s,.!?ÁÉÍÓÚáéíóúÑñ]', '', texto).strip()
-            if texto_limpio:
-                rate_str = "+15%" if homeostasis.norepinefrina > 0.6 else ("-15%" if homeostasis.adenosina > 0.6 else "+0%")
-                comunicador = edge_tts.Communicate(texto_limpio, "es-ES-ElviraNeural", rate=rate_str)
-                audio_buffer = io.BytesIO()
-                async for chunk in comunicador.stream():
-                    if chunk["type"] == "audio":
-                        audio_buffer.write(chunk["data"])
-                audio_buffer.seek(0)
-                files = {"voice": ("voice.ogg", audio_buffer, "audio/ogg")}
-                await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice", data={"chat_id": str(chat_id)}, files=files)
-        except Exception as e:
-            print(f"Error voz: {e}")
 
 
 @asynccontextmanager
@@ -525,7 +548,7 @@ app = FastAPI(lifespan=lifespan)
 
 
 # ------------------------------------------------------------------
-# 8. ENDPOINTS Y DASHBOARD
+# 9. ENDPOINTS Y DASHBOARD
 # ------------------------------------------------------------------
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
@@ -570,7 +593,7 @@ def dashboard():
     html = '''<!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8"><title>LUMI - ARQUITECTURA SOBERANA COMPLETA</title>
+<meta charset="UTF-8"><title>LUMI - ARQUITECTURA PARCHEADA</title>
 <style>
 body { background: #020204; color: #00ff66; font-family: monospace; padding: 20px; }
 .box { border: 1px solid #00ff6644; padding: 15px; margin-bottom: 15px; background: #050a07; border-radius: 5px; }
@@ -582,7 +605,7 @@ button { width: 20%; padding: 10px; background: #00ffff; color: #000; font-weigh
 </style>
 </head>
 <body>
-<h1>🧠 LUMI - ESTRUCTURA SOBERANA UNIFICADA</h1>
+<h1>🧠 LUMI - SISTEMA OPTIMIZADO Y SIN ERRORES</h1>
 <div class="box">
   <h2>ESTADO AFECTIVO VAD & BIOQUÍMICA PERSISTENTE</h2>
   <div id="homo">Cargando matriz...</div>
@@ -628,3 +651,4 @@ async function enviar(){
 @app.get("/")
 def root():
     return {"status": "LUMI ACTIVA", "estado": homeostasis.obtener_estado()}
+
