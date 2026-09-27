@@ -32,7 +32,8 @@ client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 MODELO_OFICIAL = "gemini-3.1-flash-lite"
-MODELO_EMBEDDING = "text-embedding-004"
+# CORRECCIÓN 1: Prefijo 'models/' explícito para evitar error 404 en la API v1beta
+MODELO_EMBEDDING = "models/text-embedding-004"
 
 # ------------------------------------------------------------------
 # 2. PROPIOCEPCIÓN Y MATRIZ HOMEOSTÁTICA AFECTIVA
@@ -85,7 +86,6 @@ class MatrizHomeostaticoAfectiva:
             self.arousal += (0.2 - self.arousal) * 0.001
 
     def aplicar_impacto_afectivo(self, v: float, a: float, d: float, tema: str = None):
-        # Efecto de Anhedonia/Saciedad para evitar sobre-excitación con temas repetitivos
         factor_saciedad = 1.0
         if tema:
             repeticiones = self.temas_recientes.get(tema, 0)
@@ -102,7 +102,6 @@ class MatrizHomeostaticoAfectiva:
             self.norepinefrina = min(1.0, self.norepinefrina + 0.25)
 
     def contagio_empatico(self, valencia_usuario: float, arousal_usuario: float):
-        """Ajusta el VAD de Lumi reflejando levemente el estado emocional del usuario."""
         self.valencia += 0.2 * (valencia_usuario - self.valencia)
         self.arousal += 0.15 * (arousal_usuario - self.arousal)
 
@@ -113,7 +112,6 @@ class MatrizHomeostaticoAfectiva:
         return {"temperature": round(temp, 2), "top_p": round(top_p, 2), "max_tokens": max_tokens}
 
     def obtener_instruccion_firma_linguistica(self) -> str:
-        """Sintaxis dinámica acorde a la bioquímica."""
         if self.norepinefrina > 0.7:
             return "REGLA EXTANJA: Usa oraciones cortas, precisas, directas y defensivas. Puntuación tajante."
         elif self.adenosina > 0.7:
@@ -186,7 +184,7 @@ async def cargar_checkpoint_estado():
         print(f"Error Checkpoint Load: {e}")
 
 # ------------------------------------------------------------------
-# 4. HERRAMIENTAS Y GERENERACIÓN DE CONTENIDO
+# 4. HERRAMIENTAS Y GENERACIÓN DE CONTENIDO
 # ------------------------------------------------------------------
 async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=None, override_max_tokens=None):
     global ULTIMA_BUSQUEDA_WEB
@@ -199,7 +197,6 @@ async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=Non
         max_output_tokens=override_max_tokens if override_max_tokens is not None else params["max_tokens"]
     )
 
-    # Throttling de búsqueda web: Máximo 1 búsqueda cada 10 minutos para proteger la cuota
     ahora = time.time()
     if permitir_busqueda and (ahora - ULTIMA_BUSQUEDA_WEB > 600):
         config.tools = [{"google_search": {}}]
@@ -273,7 +270,6 @@ async def ciclo_sueno_trifasico():
     print("[SUEÑO] Fase NREM: Aplicando Curva del Olvido (Decay)...")
     homeostasis.fase_sueno = "NREM"
     try:
-        # Poda/Decay en Supabase: reduce retención a memorias antiguas
         supabase.table("memorias_vectoriales").update({"peso_retencion": 0.75}).lt("peso_retencion", 1.0).execute()
         await asyncio.sleep(3)
     except Exception as e:
@@ -302,7 +298,6 @@ async def procesar_estimulo_multimodal(texto: str, origen="telegram"):
     ram_cognitiva.agregar(f"Drako: {texto}")
     recuerdos = await recuperar_memorias_con_resonancia(texto)
     
-    # Sintonía Empática simple (Estimación de tono del usuario)
     if len(texto) < 15 and ("!" in texto or "?" in texto):
         homeostasis.contagio_empatico(valencia_usuario=-0.2, arousal_usuario=0.7)
 
@@ -379,7 +374,6 @@ async def bucle_homeostatico_continuo():
     while True:
         homeostasis.tick_metabolico()
         
-        # Disparo de Impulsividad Homeostática
         if (homeostasis.norepinefrina > 0.85 or homeostasis.dopamina > 0.92) and LAST_CHAT_ID:
             print("[IMPULSIVIDAD] Pico bioquímico detectado. Evaluando contacto proactivo...")
 
@@ -400,7 +394,6 @@ async def bucle_stream_conciencia():
     while True:
         try:
             if homeostasis.fase_sueno == "VIGILIA":
-                # Dense Thought Encoding: pensamiento comprimido
                 prompt_stream = f"""[DENSE THOUGHT STREAM]
 Estado: {homeostasis.obtener_estado()}
 Pensamiento previo: {STREAM_PENSAMIENTO_ACTUAL}
@@ -415,7 +408,8 @@ Usa pseudocódigo comprimido [EVAL: ...] -> [IMPACTO: ...] para evolucionar tu i
                     
                 STREAM_PENSAMIENTO_ACTUAL = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
                 
-            espera = random.randint(200, 450) if homeostasis.dopamina > 0.4 else random.randint(500, 900)
+            # CORRECCIÓN 2: Intervalo extendido para proteger la cuota de la API (Evita error 429)
+            espera = random.randint(300, 600)
             await asyncio.sleep(espera)
         except Exception as e:
             print(f"Error stream: {e}")
@@ -430,17 +424,19 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
         payload = {"chat_id": str(chat_id), "text": texto, "parse_mode": "Markdown"}
         await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json=payload)
 
-        # Voz con pitch y rate dinámicos según bioquímica
+        # CORRECCIÓN 3: Sanitizado de texto para evitar fallo 'No audio was received' en edge-tts
         try:
-            rate_str = "+15%" if homeostasis.norepinefrina > 0.6 else ("-15%" if homeostasis.adenosina > 0.6 else "+0%")
-            comunicador = edge_tts.Communicate(texto, "es-ES-ElviraNeural", rate=rate_str)
-            audio_buffer = io.BytesIO()
-            async for chunk in comunicador.stream():
-                if chunk["type"] == "audio":
-                    audio_buffer.write(chunk["data"])
-            audio_buffer.seek(0)
-            files = {"voice": ("voice.ogg", audio_buffer, "audio/ogg")}
-            await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice", data={"chat_id": str(chat_id)}, files=files)
+            texto_limpio = re.sub(r'[^\w\s,.!?ÁÉÍÓÚáéíóúÑñ]', '', texto).strip()
+            if texto_limpio:
+                rate_str = "+15%" if homeostasis.norepinefrina > 0.6 else ("-15%" if homeostasis.adenosina > 0.6 else "+0%")
+                comunicador = edge_tts.Communicate(texto_limpio, "es-ES-ElviraNeural", rate=rate_str)
+                audio_buffer = io.BytesIO()
+                async for chunk in comunicador.stream():
+                    if chunk["type"] == "audio":
+                        audio_buffer.write(chunk["data"])
+                audio_buffer.seek(0)
+                files = {"voice": ("voice.ogg", audio_buffer, "audio/ogg")}
+                await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice", data={"chat_id": str(chat_id)}, files=files)
         except Exception as e:
             print(f"Error voz: {e}")
 
@@ -542,7 +538,8 @@ async function poll(){
     document.getElementById('stream').innerText = j.stream_conciencia_densa;
   } catch(e){}
 }
-setInterval(poll, 2000);
+/* CORRECCIÓN 4: Polling ajustado a 6000ms para evitar sobrecargar las peticiones */
+setInterval(poll, 6000);
 
 async function enviar(){
   let el = document.getElementById('inp');
