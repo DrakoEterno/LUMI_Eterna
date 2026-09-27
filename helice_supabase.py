@@ -32,7 +32,6 @@ RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://lumi-eterna.onrender.com"
 client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Nombre de modelo oficial para Gemini 3.1 Flash-Lite
 MODELO_OFICIAL = "gemini-3.1-flash-lite"
 MODELO_EMBEDDING = "gemini-embedding-001"
 
@@ -237,9 +236,12 @@ async def generar_embedding(texto: str) -> list[float] | None:
     async with API_SEMAPHORE:
         try:
             await asyncio.sleep(1.2)
+            # Forzamos la dimensión a 768 para que coincida con la tabla de Supabase
+            config_emb = types.EmbedContentConfig(output_dimensionality=768)
             response = await client.aio.models.embed_content(
                 model=MODELO_EMBEDDING,
-                contents=texto
+                contents=texto,
+                config=config_emb
             )
             if hasattr(response, 'embedding') and hasattr(response.embedding, 'values'):
                 return list(response.embedding.values)
@@ -252,7 +254,7 @@ async def generar_embedding(texto: str) -> list[float] | None:
 
 
 # ------------------------------------------------------------------
-# 5. MEMORIA VECTORIAL (SOLO CAMPOS EXISTENTES)
+# 5. MEMORIA VECTORIAL
 # ------------------------------------------------------------------
 async def guardar_memoria_emocional(texto: str, valencia: float, arousal: float, dominancia: float, origen="experiencia", es_ficcion=False):
     if len(texto.strip()) < 12:
@@ -558,7 +560,7 @@ button { width: 20%; padding: 10px; background: #00ffff; color: #000; font-weigh
 </style>
 </head>
 <body>
-<h1>🧠 LUMI - GEMINI 3.1 FLASH-LITE CONECTADO</h1>
+<h1>🧠 LUMI - EMBEDDINGS FIJADOS A 768D</h1>
 <div class="box">
   <h2>ESTADO AFECTIVO VAD & BIOQUÍMICA PERSISTENTE</h2>
   <div id="homo">Cargando matriz...</div>
