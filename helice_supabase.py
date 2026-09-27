@@ -33,7 +33,7 @@ RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://lumi-eterna.onrender.com"
 client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-MODELO_OFICIAL = "gemini-2.5-flash"
+MODELO_OFICIAL = "gemini-3.1-flash.lite"
 MODELO_EMBEDDING = "gemini-embedding-001"
 
 API_SEMAPHORE = asyncio.Semaphore(1)
