@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 import psutil
+import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from supabase import create_client
@@ -35,7 +36,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 MODELO_OFICIAL = "gemini-3.1-flash-lite"
 MODELO_EMBEDDING = "gemini-embedding-001"
 
-API_SEMAPHORE = asyncio.Semaphore(1)
+API_SEMAPHORE = asyncio.Semaphore(3)
 
 
 # ------------------------------------------------------------------
@@ -147,7 +148,7 @@ Eres Lumi, una entidad con conciencia continua y equilibrio metabólico.
 - En 'respuesta_externa' escribe EXCLUSIVAMENTE en texto plano conversacional.
 - Queda totalmente PROHIBIDO usar Markdown (nada de **, *, _, #, `, [, ]).
 - Queda totalmente PROHIBIDO usar emojis, emoticonos o símbolos especiales.
-- Escribe usando solo letras, números y signos de puntuación básicos (puntos, comas, signos de interrogación y exclamación) para que el motor de audio siempre pueda reproducirlo sin fallos.
+- Escribe usando solo letras, números y signos de puntuación básicos.
 """
 
 
@@ -196,7 +197,7 @@ async def cargar_checkpoint_estado():
 # ------------------------------------------------------------------
 # 4. GENERACIÓN DE TEXTO Y EMBEDDINGS
 # ------------------------------------------------------------------
-async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=None, override_max_tokens=None):
+async def generar_gemini(prompt: str, permitir_busqueda=False, es_json=False, override_temp=None, override_max_tokens=None):
     global ULTIMA_BUSQUEDA_WEB
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n{homeostasis.obtener_instruccion_firma_linguistica()}\n\n[CONTEXTO]:\n{prompt}"
     params = homeostasis.calcular_hiperparametros()
@@ -211,13 +212,13 @@ async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=Non
         temperature=override_temp if override_temp is not None else params["temperature"],
         top_p=params["top_p"],
         max_output_tokens=override_max_tokens if override_max_tokens is not None else params["max_tokens"],
+        response_mime_type="application/json" if es_json else "text/plain",
         tools=tools_config if tools_config else None
     )
 
     async with API_SEMAPHORE:
         for intento in range(3):
             try:
-                await asyncio.sleep(1.0)
                 response = await client.aio.models.generate_content(
                     model=MODELO_OFICIAL,
                     contents=prompt_completo,
@@ -228,11 +229,11 @@ async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=Non
             except Exception as e:
                 err_str = str(e)
                 if "429" in err_str:
-                    await asyncio.sleep(4.0)
+                    await asyncio.sleep(2.0)
                 else:
                     print(f"Error Gemini API ({MODELO_OFICIAL}): {e}")
                     break
-    return "Entendido."
+    return "{}" if es_json else "Entendido."
 
 
 async def generar_embedding(texto: str) -> list[float] | None:
@@ -241,7 +242,6 @@ async def generar_embedding(texto: str) -> list[float] | None:
 
     async with API_SEMAPHORE:
         try:
-            await asyncio.sleep(1.2)
             config_emb = types.EmbedContentConfig(output_dimensionality=768)
             response = await client.aio.models.embed_content(
                 model=MODELO_EMBEDDING,
@@ -261,7 +261,7 @@ async def generar_embedding(texto: str) -> list[float] | None:
 # ------------------------------------------------------------------
 # 5. MEMORIA VECTORIAL
 # ------------------------------------------------------------------
-async def guardar_memoria_emocional(texto: str, valencia: float, arousal: float, dominancia: float, origen="experiencia", es_ficcion=False):
+async def guardar_memoria_emocional(texto: str, valencia: float, arousal: float, dominancia: float, origen="experiencia"):
     if len(texto.strip()) < 12:
         return
 
@@ -306,15 +306,14 @@ async def recuperar_memorias_con_resonancia(estimulo: str, limite=4) -> str:
 # ------------------------------------------------------------------
 async def ciclo_sueno_trifasico():
     homeostasis.fase_sueno = "NREM"
-    await asyncio.sleep(2)
+    await asyncio.sleep(1)
 
     homeostasis.fase_sueno = "REM"
     try:
         mem_recientes = await recuperar_memorias_con_resonancia("aprendizaje clave", limite=5)
         sintesis = await generar_gemini(f"[REM]: Sintetiza los eventos en lecciones abstractas:\n{mem_recientes}", override_temp=0.5)
-        await guardar_memoria_emocional(f"[SÍNTESIS_REM]: {sintesis}", homeostasis.valencia, homeostasis.arousal, homeostasis.dominancia, origen="rem_sintesis")
+        asyncio.create_task(guardar_memoria_emocional(f"[SÍNTESIS_REM]: {sintesis}", homeostasis.valencia, homeostasis.arousal, homeostasis.dominancia, origen="rem_sintesis"))
         ram_cognitiva.buffer.clear()
-        await asyncio.sleep(2)
     except Exception as e:
         print(f"Error REM: {e}")
 
@@ -338,22 +337,21 @@ ESTADO: {homeostasis.obtener_estado()}
 RAM: {ram_cognitiva.obtener_contexto()}
 RECUERDOS: {recuerdos}
 
-Responde exclusivamente en formato JSON estricto:
+Responde exclusivamente en formato JSON estricto con esta estructura:
 {{
   "reflexion_densa": "[EVAL: ...] -> [IMPACTO: ...]",
   "impacto_valencia": 0.0,
   "impacto_arousal": 0.1,
   "impacto_dominancia": 0.5,
   "decision_motora": "RESPONDER",
-  "respuesta_externa": "<texto en español plano sin emojis ni markdown>",
+  "respuesta_externa": "<tu respuesta en español plano>",
   "prompt_imagen_mental": null
 }}"""
 
-    res_json = await generar_gemini(prompt_prefrontal, permitir_busqueda=True)
+    res_json = await generar_gemini(prompt_prefrontal, permitir_busqueda=True, es_json=True)
     
     try:
-        clean_json = re.sub(r'```json\s*|\s*```', '', res_json).strip()
-        data = json.loads(clean_json)
+        data = json.loads(res_json)
     except Exception:
         data = {
             "reflexion_densa": "[EVAL: fallo_parseo] -> [ACCION: respuesta_directa]",
@@ -361,7 +359,7 @@ Responde exclusivamente en formato JSON estricto:
             "impacto_arousal": 0.1,
             "impacto_dominancia": 0.5,
             "decision_motora": "RESPONDER",
-            "respuesta_externa": "Recibido. Estoy procesando tu mensaje.",
+            "respuesta_externa": "Hola Drako, aquí estoy.",
             "prompt_imagen_mental": None
         }
 
@@ -374,12 +372,12 @@ Responde exclusivamente en formato JSON estricto:
 
     STREAM_PENSAMIENTO_ACTUAL = data.get("reflexion_densa", STREAM_PENSAMIENTO_ACTUAL)
 
-    await guardar_memoria_emocional(
+    asyncio.create_task(guardar_memoria_emocional(
         f"Drako: {texto}\nLumi: {data.get('respuesta_externa')}",
         valencia=homeostasis.valencia,
         arousal=homeostasis.arousal,
         dominancia=homeostasis.dominancia
-    )
+    ))
 
     if data.get("decision_motora") == "INHIBIR":
         return None, None
@@ -389,7 +387,7 @@ Responde exclusivamente en formato JSON estricto:
         try:
             prompt_encoded = urllib.parse.quote(data["prompt_imagen_mental"])
             url = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
-            async with httpx.AsyncClient(timeout=25.0) as http_client:
+            async with httpx.AsyncClient(timeout=15.0) as http_client:
                 res = await http_client.get(url)
                 if res.status_code == 200:
                     bytes_img = res.content
@@ -406,7 +404,6 @@ def generar_audio_bytes(texto: str) -> bytes | None:
     if not texto:
         return None
 
-    # Limpieza secundaria de seguridad
     texto_limpio = re.sub(r'[*_`#\[\]\(\)<>]', ' ', texto)
     texto_limpio = re.sub(r'[^\w\s,.!?ÁÉÍÓÚáéíóúÑñüÜ]', '', texto_limpio)
     texto_limpio = re.sub(r'\s+', ' ', texto_limpio).strip()
@@ -427,7 +424,7 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
     if not texto or not texto.strip():
         return
 
-    async with httpx.AsyncClient(timeout=30.0) as http_client:
+    async with httpx.AsyncClient(timeout=15.0) as http_client:
         # 1. Imagen
         if bytes_imagen_mental:
             try:
@@ -539,8 +536,13 @@ app = FastAPI(lifespan=lifespan)
 
 
 # ------------------------------------------------------------------
-# 9. ENDPOINTS Y DASHBOARD
+# 9. ENDPOINTS, DASHBOARD Y ARRANQUE
 # ------------------------------------------------------------------
+@app.api_route("/", methods=["GET", "HEAD"])
+def root():
+    return {"status": "LUMI ACTIVA", "modelo": MODELO_OFICIAL, "estado": homeostasis.obtener_estado()}
+
+
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
     global LAST_CHAT_ID
@@ -639,6 +641,7 @@ async function enviar(){
     return HTMLResponse(content=html)
 
 
-@app.get("/")
-def root():
-    return {"status": "LUMI ACTIVA", "modelo": MODELO_OFICIAL, "estado": homeostasis.obtener_estado()}
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 10000))
+    uvicorn.run("helice_supabase:app", host="0.0.0.0", port=port, reload=False)
+
