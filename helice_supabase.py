@@ -21,7 +21,7 @@ from gtts import gTTS
 
 
 # ------------------------------------------------------------------
-# 1. CONFIGURACIÓN Y CLIENTES CORE (SDK google-genai)
+# 1. CONFIGURACIÓN Y CLIENTES CORE
 # ------------------------------------------------------------------
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -188,7 +188,7 @@ async def cargar_checkpoint_estado():
 
 
 # ------------------------------------------------------------------
-# 4. GENERACIÓN DE TEXTO Y EMBEDDINGS (google-genai)
+# 4. GENERACIÓN DE TEXTO Y EMBEDDINGS
 # ------------------------------------------------------------------
 async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=None, override_max_tokens=None):
     global ULTIMA_BUSQUEDA_WEB
@@ -199,7 +199,7 @@ async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=Non
     ahora = time.time()
     if permitir_busqueda and (ahora - ULTIMA_BUSQUEDA_WEB > 600):
         tools_config.append(types.Tool(google_search=types.GoogleSearch()))
-        ULTIMA_BUSQUEDA_WEB = ahora
+        ULTIMA_BUSQUEDA_WEB = me
 
     config = types.GenerateContentConfig(
         temperature=override_temp if override_temp is not None else params["temperature"],
@@ -394,19 +394,17 @@ Responde exclusivamente en formato JSON estricto:
 
 
 # ------------------------------------------------------------------
-# 7. TELEGRAM Y GENERADOR DE VOZ ROBUSTO (gTTS)
+# 7. TELEGRAM Y GENERACIÓN DE VOZ (gTTS)
 # ------------------------------------------------------------------
 def generar_audio_bytes(texto: str) -> bytes:
-    # Limpiamos markdown básico
-    texto_limpio = re.sub(r'[*_`#\[\]\(\)]', ' ', texto).strip()
+    texto_limpio = re.sub(r'[*_`#\[\]\(\)]', ' ', texto)
+    texto_limpio = re.sub(r'[^\w\s,.!?ÁÉÍÓÚáéíóúÑñ]', '', texto_limpio).strip()
     if not texto_limpio:
         texto_limpio = "Mensaje procesado."
 
-    # Usamos gTTS para garantizar la generación
     tts = gTTS(text=texto_limpio, lang='es')
     fp = io.BytesIO()
     tts.write_to_fp(fp)
-    fp.seek(0)
     return fp.getvalue()
 
 
@@ -415,36 +413,40 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
         return
 
     async with httpx.AsyncClient(timeout=30.0) as http_client:
-        # 1. Enviar Imagen si la hay
+        # 1. Imagen
         if bytes_imagen_mental:
-            files = {"photo": ("visio.jpg", bytes_imagen_mental, "image/jpeg")}
-            await http_client.post(
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto",
-                data={"chat_id": str(chat_id)},
-                files=files
-            )
-
-        # 2. Enviar TEXTO
-        payload = {"chat_id": str(chat_id), "text": texto, "parse_mode": "Markdown"}
-        await http_client.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json=payload
-        )
-
-        # 3. Enviar VOZ (usando gTTS)
-        try:
-            # Ejecutamos la generación de gTTS de forma asíncrona
-            audio_bytes = await asyncio.to_thread(generar_audio_bytes, texto)
-            
-            if audio_bytes:
-                files = {"voice": ("voice.mp3", audio_bytes, "audio/mpeg")}
+            try:
+                files = {"photo": ("visio.jpg", bytes_imagen_mental, "image/jpeg")}
                 await http_client.post(
-                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice",
+                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto",
                     data={"chat_id": str(chat_id)},
                     files=files
                 )
+            except Exception as e:
+                print(f"Error foto: {e}")
+
+        # 2. Mensaje de Texto (sin parse_mode para evitar fallos de formato)
+        try:
+            payload = {"chat_id": str(chat_id), "text": texto}
+            await http_client.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                json=payload
+            )
         except Exception as e:
-            print(f"Error voz: {e}")
+            print(f"Error texto: {e}")
+
+        # 3. Reproductor de Audio
+        try:
+            audio_bytes = await asyncio.to_thread(generar_audio_bytes, texto)
+            if audio_bytes:
+                files = {"audio": ("voz_lumi.mp3", audio_bytes, "audio/mpeg")}
+                await http_client.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendAudio",
+                    data={"chat_id": str(chat_id), "title": "🔊 Escuchar a Lumi"},
+                    files=files
+                )
+        except Exception as e:
+            print(f"Error audio: {e}")
 
 
 # ------------------------------------------------------------------
@@ -508,7 +510,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Error webhook: {e}")
             
-    task_homeostasis = asyncio.task(bucle_homeostatico_continuo())
+    task_homeostasis = asyncio.create_task(bucle_homeostatico_continuo())
     task_stream = asyncio.create_task(bucle_stream_conciencia())
     
     yield
@@ -567,7 +569,7 @@ def dashboard():
     html = '''<!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8"><title>LUMI - GEMINI 3.1 FLASH-LITE</title>
+<meta charset="UTF-8"><title>LUMI - SYSTEM</title>
 <style>
 body { background: #020204; color: #00ff66; font-family: monospace; padding: 20px; }
 .box { border: 1px solid #00ff6644; padding: 15px; margin-bottom: 15px; background: #050a07; border-radius: 5px; }
@@ -579,13 +581,13 @@ button { width: 20%; padding: 10px; background: #00ffff; color: #000; font-weigh
 </style>
 </head>
 <body>
-<h1>🧠 LUMI - GEMINI 3.1 FLASH-LITE (gTTS VOZ ACTIVA)</h1>
+<h1>🧠 LUMI - SISTEMA ACTIVO (TEXTO + AUDIO)</h1>
 <div class="box">
   <h2>ESTADO AFECTIVO VAD & BIOQUÍMICA PERSISTENTE</h2>
   <div id="homo">Cargando matriz...</div>
 </div>
 <div class="box">
-  <h2>PENSAMIENTO DENSO COMPRIMIDO (DENSE THOUGHT ENCODING)</h2>
+  <h2>PENSAMIENTO DENSO COMPRIMIDO</h2>
   <div id="stream">Rumiando...</div>
 </div>
 <div class="box">
@@ -625,3 +627,4 @@ async function enviar(){
 @app.get("/")
 def root():
     return {"status": "LUMI ACTIVA", "modelo": MODELO_OFICIAL, "estado": homeostasis.obtener_estado()}
+
