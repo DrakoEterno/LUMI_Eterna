@@ -17,7 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from supabase import create_client
 from google import genai
 from google.genai import types
-import edge_tts
+from gtts import gTTS
 
 
 # ------------------------------------------------------------------
@@ -32,7 +32,6 @@ RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://lumi-eterna.onrender.com"
 client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Configuración de modelos oficiales
 MODELO_OFICIAL = "gemini-3.1-flash-lite"
 MODELO_EMBEDDING = "gemini-embedding-001"
 
@@ -237,7 +236,6 @@ async def generar_embedding(texto: str) -> list[float] | None:
     async with API_SEMAPHORE:
         try:
             await asyncio.sleep(1.2)
-            # Fijamos las dimensiones a 768 para que coincida con la DB de Supabase
             config_emb = types.EmbedContentConfig(output_dimensionality=768)
             response = await client.aio.models.embed_content(
                 model=MODELO_EMBEDDING,
@@ -396,14 +394,28 @@ Responde exclusivamente en formato JSON estricto:
 
 
 # ------------------------------------------------------------------
-# 7. TELEGRAM Y EDGE-TTS (TEXTO + AUDIO)
+# 7. TELEGRAM Y GENERADOR DE VOZ ROBUSTO (gTTS)
 # ------------------------------------------------------------------
+def generar_audio_bytes(texto: str) -> bytes:
+    # Limpiamos markdown básico
+    texto_limpio = re.sub(r'[*_`#\[\]\(\)]', ' ', texto).strip()
+    if not texto_limpio:
+        texto_limpio = "Mensaje procesado."
+
+    # Usamos gTTS para garantizar la generación
+    tts = gTTS(text=texto_limpio, lang='es')
+    fp = io.BytesIO()
+    tts.write_to_fp(fp)
+    fp.seek(0)
+    return fp.getvalue()
+
+
 async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
     if not texto or not texto.strip():
         return
 
     async with httpx.AsyncClient(timeout=30.0) as http_client:
-        # 1. Imagen si existe
+        # 1. Enviar Imagen si la hay
         if bytes_imagen_mental:
             files = {"photo": ("visio.jpg", bytes_imagen_mental, "image/jpeg")}
             await http_client.post(
@@ -412,33 +424,20 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
                 files=files
             )
 
-        # 2. Enviar MENSAJE DE TEXTO
+        # 2. Enviar TEXTO
         payload = {"chat_id": str(chat_id), "text": texto, "parse_mode": "Markdown"}
         await http_client.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
             json=payload
         )
 
-        # 3. Enviar MENSAJE DE VOZ
+        # 3. Enviar VOZ (usando gTTS)
         try:
-            texto_limpio = re.sub(r'[*_`#\[\]\(\)]', ' ', texto)
-            texto_limpio = re.sub(r'[^\w\s,.!?ÁÉÍÓÚáéíóúÑñ]', '', texto_limpio).strip()
-
-            if not texto_limpio:
-                texto_limpio = "Mensaje procesado correctamente."
-
-            rate_str = "+15%" if homeostasis.norepinefrina > 0.6 else ("-15%" if homeostasis.adenosina > 0.6 else "+0%")
-            comunicador = edge_tts.Communicate(texto_limpio, "es-ES-ElviraNeural", rate=rate_str)
-            audio_buffer = io.BytesIO()
-
-            async for chunk in comunicador.stream():
-                if chunk["type"] == "audio":
-                    audio_buffer.write(chunk["data"])
-
-            audio_bytes = audio_buffer.getvalue()
-            if len(audio_bytes) > 0:
-                audio_buffer.seek(0)
-                files = {"voice": ("voice.ogg", audio_buffer, "audio/ogg")}
+            # Ejecutamos la generación de gTTS de forma asíncrona
+            audio_bytes = await asyncio.to_thread(generar_audio_bytes, texto)
+            
+            if audio_bytes:
+                files = {"voice": ("voice.mp3", audio_bytes, "audio/mpeg")}
                 await http_client.post(
                     f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice",
                     data={"chat_id": str(chat_id)},
@@ -509,7 +508,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Error webhook: {e}")
             
-    task_homeostasis = asyncio.create_task(bucle_homeostatico_continuo())
+    task_homeostasis = asyncio.task(bucle_homeostatico_continuo())
     task_stream = asyncio.create_task(bucle_stream_conciencia())
     
     yield
@@ -580,7 +579,7 @@ button { width: 20%; padding: 10px; background: #00ffff; color: #000; font-weigh
 </style>
 </head>
 <body>
-<h1>🧠 LUMI - GEMINI 3.1 FLASH-LITE (TEXTO + VOZ)</h1>
+<h1>🧠 LUMI - GEMINI 3.1 FLASH-LITE (gTTS VOZ ACTIVA)</h1>
 <div class="box">
   <h2>ESTADO AFECTIVO VAD & BIOQUÍMICA PERSISTENTE</h2>
   <div id="homo">Cargando matriz...</div>
@@ -626,4 +625,3 @@ async function enviar(){
 @app.get("/")
 def root():
     return {"status": "LUMI ACTIVA", "modelo": MODELO_OFICIAL, "estado": homeostasis.obtener_estado()}
-
