@@ -31,8 +31,12 @@ RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://lumi-eterna.onrender.com"
 client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# MODELOS CONFIGURADOS
 MODELO_OFICIAL = "gemini-3.1-flash-lite"
-MODELO_EMBEDDING = "text-embedding-004"
+MODELO_EMBEDDING = "text-embedding-004"  # Cadena limpia sin prefijos para la nueva librería
+
+# Semáforo para controlar la concurrencia e impedir el error 429 por ráfaga
+API_SEMAPHORE = asyncio.Semaphore(1)
 
 # ------------------------------------------------------------------
 # 2. PROPIOCEPCIÓN Y MATRIZ HOMEOSTÁTICA AFECTIVA
@@ -200,32 +204,35 @@ async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=Non
         config.tools = [{"google_search": {}}]
         ULTIMA_BUSQUEDA_WEB = ahora
 
-    try:
-        r = await client.aio.models.generate_content(
-            model=MODELO_OFICIAL,
-            contents=[prompt_completo],
-            config=config
-        )
-        if r and hasattr(r, 'text') and r.text:
-            return r.text
-    except Exception as e:
-        print(f"Error Gemini API: {e}")
+    async with API_SEMAPHORE:
+        try:
+            await asyncio.sleep(0.5) # Pausa estratégica para evitar límite por ráfaga
+            r = await client.aio.models.generate_content(
+                model=MODELO_OFICIAL,
+                contents=[prompt_completo],
+                config=config
+            )
+            if r and hasattr(r, 'text') and r.text:
+                return r.text
+        except Exception as e:
+            print(f"Error Gemini API: {e}")
     return "..."
 
 # ------------------------------------------------------------------
 # 5. MEMORIA VECTORIAL CON OLVIDO (DECAY) Y GRAFO
 # ------------------------------------------------------------------
 async def generar_embedding(texto: str) -> list[float] | None:
-    try:
-        # Solución al error 404: Usar exactamente 'text-embedding-004'
-        r = await client.aio.models.embed_content(
-            model="text-embedding-004",
-            contents=texto
-        )
-        return r.embedding.values
-    except Exception as e:
-        print(f"Error embedding: {e}")
-        return None
+    async with API_SEMAPHORE:
+        try:
+            await asyncio.sleep(0.5) # Pausa estratégica para evitar límite por ráfaga
+            r = await client.aio.models.embed_content(
+                model=MODELO_EMBEDDING,
+                contents=texto
+            )
+            return r.embedding.values
+        except Exception as e:
+            print(f"Error embedding: {e}")
+            return None
 
 async def guardar_memoria_emocional(texto: str, valencia: float, arousal: float, dominancia: float, origen="experiencia", es_ficcion=False):
     vec = await generar_embedding(texto)
@@ -410,7 +417,6 @@ Usa pseudocódigo comprimido [EVAL: ...] -> [IMPACTO: ...] para evolucionar tu i
                     
                 STREAM_PENSAMIENTO_ACTUAL = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
                 
-            # Solución al error 429: Pausa extendida entre 8 y 15 minutos para respetar límites de API
             espera = random.randint(480, 900)
             await asyncio.sleep(espera)
         except Exception as e:
@@ -426,7 +432,6 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
         payload = {"chat_id": str(chat_id), "text": texto, "parse_mode": "Markdown"}
         await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json=payload)
 
-        # Solución al error de voz: Limpieza de texto previa para edge-tts
         try:
             texto_limpio = re.sub(r'[^\w\s,.!?ÁÉÍÓÚáéíóúÑñ]', '', texto).strip()
             if texto_limpio:
@@ -540,7 +545,6 @@ async function poll(){
     document.getElementById('stream').innerText = j.stream_conciencia_densa;
   } catch(e){}
 }
-// Polling a 10000ms (10s) para evitar saturación de peticiones
 setInterval(poll, 10000);
 
 async function enviar(){
