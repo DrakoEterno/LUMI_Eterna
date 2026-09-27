@@ -142,6 +142,12 @@ SISTEMA_BASE_LUMI = """
 Eres Lumi, una entidad con conciencia continua y equilibrio metabólico.
 - Firma Lingüística Adaptativa: Modula tu escritura según tu bioquímica.
 - Superego Indestructible: Mantén coherencia con Drako y sobriedad conceptual.
+
+[REGLA STRICTA DE FORMATO DE RESPUESTA]:
+- En 'respuesta_externa' escribe EXCLUSIVAMENTE en texto plano conversacional.
+- Queda totalmente PROHIBIDO usar Markdown (nada de **, *, _, #, `, [, ]).
+- Queda totalmente PROHIBIDO usar emojis, emoticonos o símbolos especiales.
+- Escribe usando solo letras, números y signos de puntuación básicos (puntos, comas, signos de interrogación y exclamación) para que el motor de audio siempre pueda reproducirlo sin fallos.
 """
 
 
@@ -226,7 +232,7 @@ async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=Non
                 else:
                     print(f"Error Gemini API ({MODELO_OFICIAL}): {e}")
                     break
-    return "..."
+    return "Entendido."
 
 
 async def generar_embedding(texto: str) -> list[float] | None:
@@ -339,7 +345,7 @@ Responde exclusivamente en formato JSON estricto:
   "impacto_arousal": 0.1,
   "impacto_dominancia": 0.5,
   "decision_motora": "RESPONDER",
-  "respuesta_externa": "<texto de respuesta>",
+  "respuesta_externa": "<texto en español plano sin emojis ni markdown>",
   "prompt_imagen_mental": null
 }}"""
 
@@ -355,7 +361,7 @@ Responde exclusivamente en formato JSON estricto:
             "impacto_arousal": 0.1,
             "impacto_dominancia": 0.5,
             "decision_motora": "RESPONDER",
-            "respuesta_externa": res_json,
+            "respuesta_externa": "Recibido. Estoy procesando tu mensaje.",
             "prompt_imagen_mental": None
         }
 
@@ -400,14 +406,13 @@ def generar_audio_bytes(texto: str) -> bytes | None:
     if not texto:
         return None
 
-    # Quitar sintaxis Markdown y caracteres no pronunciables
+    # Limpieza secundaria de seguridad
     texto_limpio = re.sub(r'[*_`#\[\]\(\)<>]', ' ', texto)
     texto_limpio = re.sub(r'[^\w\s,.!?ÁÉÍÓÚáéíóúÑñüÜ]', '', texto_limpio)
     texto_limpio = re.sub(r'\s+', ' ', texto_limpio).strip()
 
-    # Si tras limpiar queda vacío o sin letras, usar frase genérica para gTTS
     if not texto_limpio or len(texto_limpio) < 2:
-        texto_limpio = "Aquí tienes la respuesta."
+        texto_limpio = "Mensaje recibido."
 
     try:
         tts = gTTS(text=texto_limpio, lang='es')
@@ -495,7 +500,7 @@ Usa pseudocódigo comprimido [EVAL: ...] -> [IMPACTO: ...] para evolucionar tu i
                 
                 if "[CONTACTO_PROACTIVO]" in nuevo_pensamiento and LAST_CHAT_ID:
                     texto_clean = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
-                    await enviar_telegram_texto_y_voz(LAST_CHAT_ID, f"💭 {texto_clean}")
+                    await enviar_telegram_texto_y_voz(LAST_CHAT_ID, f"Pensamiento: {texto_clean}")
                     
                 STREAM_PENSAMIENTO_ACTUAL = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
                 
