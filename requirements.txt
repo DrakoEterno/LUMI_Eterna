@@ -1,7 +1,6 @@
 fastapi
 uvicorn
-httpx
-psutil
 supabase
 google-genai
-gTTS
+httpx
+edge-tts
