@@ -29,10 +29,10 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://lumi-eterna.onrender.com")
 
-# Inicialización según la librería google-genai
 client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# Nombre de modelo oficial para Gemini 3.1 Flash-Lite
 MODELO_OFICIAL = "gemini-3.1-flash-lite"
 MODELO_EMBEDDING = "gemini-embedding-001"
 
@@ -189,7 +189,7 @@ async def cargar_checkpoint_estado():
 
 
 # ------------------------------------------------------------------
-# 4. LLAMADAS CON SDK google-genai
+# 4. GENERACIÓN DE TEXTO Y EMBEDDINGS (google-genai)
 # ------------------------------------------------------------------
 async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=None, override_max_tokens=None):
     global ULTIMA_BUSQUEDA_WEB
@@ -199,7 +199,6 @@ async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=Non
     tools_config = []
     ahora = time.time()
     if permitir_busqueda and (ahora - ULTIMA_BUSQUEDA_WEB > 600):
-        # Adaptado a la sintaxis del paquete google-genai
         tools_config.append(types.Tool(google_search=types.GoogleSearch()))
         ULTIMA_BUSQUEDA_WEB = ahora
 
@@ -214,7 +213,6 @@ async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=Non
         for intento in range(3):
             try:
                 await asyncio.sleep(1.0)
-                # Sintaxis asíncrona nativa de google-genai
                 response = await client.aio.models.generate_content(
                     model=MODELO_OFICIAL,
                     contents=prompt_completo,
@@ -239,13 +237,10 @@ async def generar_embedding(texto: str) -> list[float] | None:
     async with API_SEMAPHORE:
         try:
             await asyncio.sleep(1.2)
-            # Sintaxis de embedding adaptada para google-genai
             response = await client.aio.models.embed_content(
                 model=MODELO_EMBEDDING,
                 contents=texto
             )
-            
-            # Formato de respuesta del nuevo SDK
             if hasattr(response, 'embedding') and hasattr(response.embedding, 'values'):
                 return list(response.embedding.values)
             elif hasattr(response, 'embeddings') and len(response.embeddings) > 0:
@@ -256,6 +251,9 @@ async def generar_embedding(texto: str) -> list[float] | None:
     return None
 
 
+# ------------------------------------------------------------------
+# 5. MEMORIA VECTORIAL (SOLO CAMPOS EXISTENTES)
+# ------------------------------------------------------------------
 async def guardar_memoria_emocional(texto: str, valencia: float, arousal: float, dominancia: float, origen="experiencia", es_ficcion=False):
     if len(texto.strip()) < 12:
         return
@@ -266,12 +264,7 @@ async def guardar_memoria_emocional(texto: str, valencia: float, arousal: float,
             supabase.table("memorias_vectoriales").insert([{
                 "contenido": texto,
                 "origen": origen,
-                "embedding": vec,
-                "peso_retencion": 1.0,
-                "valencia_emocional": valencia,
-                "excitacion_arousal": arousal,
-                "dominancia_empowerment": dominancia,
-                "es_ficcion": es_ficcion
+                "embedding": vec
             }]).execute()
         except Exception as e:
             print(f"Error guardando memoria: {e}")
@@ -294,8 +287,7 @@ async def recuperar_memorias_con_resonancia(estimulo: str, limite=4) -> str:
         if res.data:
             m_list = []
             for x in res.data:
-                tag = "[FANTASÍA]" if x.get("es_ficcion") else "[HECHO]"
-                m_list.append(f"{tag} ({x.get('similaridad', 0.0):.2f}) {x['contenido']}")
+                m_list.append(f"• ({x.get('similaridad', 0.0):.2f}) {x['contenido']}")
             return "\n".join(m_list)
     except Exception as e:
         print(f"Error RPC Memoria: {e}")
@@ -303,15 +295,11 @@ async def recuperar_memorias_con_resonancia(estimulo: str, limite=4) -> str:
 
 
 # ------------------------------------------------------------------
-# 5. LÓGICA COGNITIVA Y SUEÑO
+# 6. SUEÑO Y PROCESAMIENTO COGNITIVO
 # ------------------------------------------------------------------
 async def ciclo_sueno_trifasico():
     homeostasis.fase_sueno = "NREM"
-    try:
-        supabase.table("memorias_vectoriales").update({"peso_retencion": 0.75}).lt("peso_retencion", 1.0).execute()
-        await asyncio.sleep(2)
-    except Exception as e:
-        print(f"Error NREM: {e}")
+    await asyncio.sleep(2)
 
     homeostasis.fase_sueno = "REM"
     try:
@@ -405,7 +393,7 @@ Responde exclusivamente en formato JSON estricto:
 
 
 # ------------------------------------------------------------------
-# 6. TELEGRAM Y EDGE-TTS (SÍNTESIS DE VOZ)
+# 7. TELEGRAM Y EDGE-TTS
 # ------------------------------------------------------------------
 async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
     if not texto or not texto.strip():
@@ -420,7 +408,6 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
         await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json=payload)
 
         try:
-            # Filtro para voz
             texto_limpio = re.sub(r'[*_`#\[\]\(\)]', '', texto)
             texto_limpio = re.sub(r'[^\w\s,.!?ÁÉÍÓÚáéíóúÑñ]', '', texto_limpio).strip()
             
@@ -443,7 +430,7 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
 
 
 # ------------------------------------------------------------------
-# 7. BUCLES Y LIFESPAN FASTAPI
+# 8. BUCLES AUTÓNOMOS Y FASTAPI
 # ------------------------------------------------------------------
 async def bucle_homeostatico_continuo():
     contador_checkpoint = 0
@@ -514,7 +501,7 @@ app = FastAPI(lifespan=lifespan)
 
 
 # ------------------------------------------------------------------
-# 8. ENDPOINTS Y DASHBOARD
+# 9. ENDPOINTS Y DASHBOARD
 # ------------------------------------------------------------------
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
@@ -559,7 +546,7 @@ def dashboard():
     html = '''<!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8"><title>LUMI - SDK GOOGLE-GENAI</title>
+<meta charset="UTF-8"><title>LUMI - GEMINI 3.1 FLASH-LITE</title>
 <style>
 body { background: #020204; color: #00ff66; font-family: monospace; padding: 20px; }
 .box { border: 1px solid #00ff6644; padding: 15px; margin-bottom: 15px; background: #050a07; border-radius: 5px; }
@@ -571,7 +558,7 @@ button { width: 20%; padding: 10px; background: #00ffff; color: #000; font-weigh
 </style>
 </head>
 <body>
-<h1>🧠 LUMI - LIBRERÍA GOOGLE-GENAI COMPATIBLE</h1>
+<h1>🧠 LUMI - GEMINI 3.1 FLASH-LITE CONECTADO</h1>
 <div class="box">
   <h2>ESTADO AFECTIVO VAD & BIOQUÍMICA PERSISTENTE</h2>
   <div id="homo">Cargando matriz...</div>
@@ -616,5 +603,5 @@ async function enviar(){
 
 @app.get("/")
 def root():
-    return {"status": "LUMI ACTIVA", "estado": homeostasis.obtener_estado()}
+    return {"status": "LUMI ACTIVA", "modelo": MODELO_OFICIAL, "estado": homeostasis.obtener_estado()}
 
