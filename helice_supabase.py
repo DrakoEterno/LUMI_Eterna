@@ -19,6 +19,7 @@ from google import genai
 from google.genai import types
 import edge_tts
 
+
 # ------------------------------------------------------------------
 # 1. CONFIGURACIÓN Y CLIENTES CORE
 # ------------------------------------------------------------------
@@ -32,10 +33,10 @@ client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # MODELOS CONFIGURADOS
-MODELO_OFICIAL = "gemini-3.1-flash-lite"
-MODELO_EMBEDDING = "text-embedding-004"  # Cadena limpia sin prefijos para la nueva librería
+MODELO_OFICIAL = "gemini-2.5-flash"
+MODELO_EMBEDDING = "text-embedding-004"
 
-# Semáforo para controlar la concurrencia e impedir el error 429 por ráfaga
+# Semáforo para controlar la concurrencia (Garantiza < 15 RPM)
 API_SEMAPHORE = asyncio.Semaphore(1)
 
 
@@ -200,16 +201,18 @@ async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=Non
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n{homeostasis.obtener_instruccion_firma_linguistica()}\n\n[CONTEXTO]:\n{prompt}"
     params = homeostasis.calcular_hiperparametros()
 
+    tools_list = []
+    ahora = time.time()
+    if permitir_busqueda and (ahora - ULTIMA_BUSQUEDA_WEB > 600):
+        tools_list.append({"google_search": {}})
+        ULTIMA_BUSQUEDA_WEB = ahora
+
     config = types.GenerateContentConfig(
         temperature=override_temp if override_temp is not None else params["temperature"],
         top_p=params["top_p"],
-        max_output_tokens=override_max_tokens if override_max_tokens is not None else params["max_tokens"]
+        max_output_tokens=override_max_tokens if override_max_tokens is not None else params["max_tokens"],
+        tools=tools_list if tools_list else None
     )
-
-    ahora = time.time()
-    if permitir_busqueda and (ahora - ULTIMA_BUSQUEDA_WEB > 600):
-        config.tools = [{"google_search": {}}]
-        ULTIMA_BUSQUEDA_WEB = ahora
 
     async with API_SEMAPHORE:
         for intento in range(3):
@@ -225,8 +228,8 @@ async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=Non
             except Exception as e:
                 err_msg = str(e)
                 if "429" in err_msg:
-                    print(f"[REINTENTO GEMINI 429] Reintentando tras pausa por ráfaga ({intento + 1}/3)...")
-                    await asyncio.sleep(2.0 * (intento + 1))
+                    print(f"[REINTENTO GEMINI 429] Pausa por cuotas/ráfaga ({intento + 1}/3)...")
+                    await asyncio.sleep(3.0 * (intento + 1))
                 else:
                     print(f"Error Gemini API ({MODELO_OFICIAL}): {e}")
                     break
@@ -237,7 +240,7 @@ async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=Non
 # 5. MEMORIA VECTORIAL CON OLVIDO (DECAY) Y GRAFO
 # ------------------------------------------------------------------
 async def generar_embedding(texto: str) -> list[float] | None:
-    if not texto or not texto.strip():
+    if not texto or len(texto.strip()) < 8:  # Optimización de cuota para frases ultra cortas
         return None
 
     async with API_SEMAPHORE:
@@ -248,15 +251,15 @@ async def generar_embedding(texto: str) -> list[float] | None:
                     model=MODELO_EMBEDDING,
                     contents=texto
                 )
-                if hasattr(r, 'embeddings') and len(r.embeddings) > 0:
-                    return r.embeddings[0].values
-                elif hasattr(r, 'embedding') and hasattr(r.embedding, 'values'):
-                    return r.embedding.values
+                if hasattr(r, 'embedding') and hasattr(r.embedding, 'values'):
+                    return list(r.embedding.values)
+                elif hasattr(r, 'embeddings') and len(r.embeddings) > 0:
+                    return list(r.embeddings[0].values)
             except Exception as e:
                 err_msg = str(e)
                 if "429" in err_msg:
                     print(f"[REINTENTO EMBEDDING 429] Espere un momento... ({intento + 1}/3)")
-                    await asyncio.sleep(2.0 * (intento + 1))
+                    await asyncio.sleep(3.0 * (intento + 1))
                 else:
                     print(f"Error embedding ({MODELO_EMBEDDING}): {e}")
                     break
@@ -264,6 +267,10 @@ async def generar_embedding(texto: str) -> list[float] | None:
 
 
 async def guardar_memoria_emocional(texto: str, valencia: float, arousal: float, dominancia: float, origen="experiencia", es_ficcion=False):
+    # Ahorro de RPD: no guardar recuerdos de texto irrelevante
+    if len(texto.strip()) < 12:
+        return
+
     vec = await generar_embedding(texto)
     if vec:
         try:
@@ -282,6 +289,9 @@ async def guardar_memoria_emocional(texto: str, valencia: float, arousal: float,
 
 
 async def recuperar_memorias_con_resonancia(estimulo: str, limite=4) -> str:
+    if len(estimulo.strip()) < 8:
+        return "Sin memorias asociadas."
+
     vec = await generar_embedding(estimulo)
     if not vec:
         return "Sin memorias asociadas."
@@ -296,7 +306,7 @@ async def recuperar_memorias_con_resonancia(estimulo: str, limite=4) -> str:
             m_list = []
             for x in res.data:
                 tag = "[FANTASÍA]" if x.get("es_ficcion") else "[HECHO]"
-                m_list.append(f"{tag} ({x['similaridad']:.2f}) {x['contenido']}")
+                m_list.append(f"{tag} ({x.get('similaridad', 0.0):.2f}) {x['contenido']}")
             return "\n".join(m_list)
     except Exception as e:
         print(f"Error RPC Memoria: {e}")
@@ -337,7 +347,9 @@ async def procesar_estimulo_multimodal(texto: str, origen="telegram"):
     global STREAM_PENSAMIENTO_ACTUAL
     
     ram_cognitiva.agregar(f"Drako: {texto}")
-    recuerdos = await recuperar_memorias_con_resonancia(texto)
+    
+    # Recuperar recuerdos únicamente si la consulta es lo suficientemente larga
+    recuerdos = await recuperar_memorias_con_resonancia(texto) if len(texto) >= 8 else "Sin memorias asociadas."
     
     if len(texto) < 15 and ("!" in texto or "?" in texto):
         homeostasis.contagio_empatico(valencia_usuario=-0.2, arousal_usuario=0.7)
@@ -347,15 +359,15 @@ ESTADO: {homeostasis.obtener_estado()}
 RAM: {ram_cognitiva.obtener_contexto()}
 RECUERDOS: {recuerdos}
 
-Responde en formato JSON:
+Responde exclusivamente en formato JSON estricto:
 {{
   "reflexion_densa": "[EVAL: ...] -> [IMPACTO: ...]",
-  "impacto_valencia": <float -1.0 a 1.0>,
-  "impacto_arousal": <float 0.0 a 1.0>,
-  "impacto_dominancia": <float 0.0 a 1.0>,
-  "decision_motora": "<RESPONDER / INHIBIR>",
+  "impacto_valencia": 0.0,
+  "impacto_arousal": 0.1,
+  "impacto_dominancia": 0.5,
+  "decision_motora": "RESPONDER",
   "respuesta_externa": "<texto de respuesta>",
-  "prompt_imagen_mental": "<prompt ingles o null>"
+  "prompt_imagen_mental": null
 }}"""
 
     res_json = await generar_gemini(prompt_prefrontal, permitir_busqueda=True)
@@ -451,14 +463,19 @@ Usa pseudocódigo comprimido [EVAL: ...] -> [IMPACTO: ...] para evolucionar tu i
                     
                 STREAM_PENSAMIENTO_ACTUAL = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
                 
-            espera = random.randint(480, 900)
+            # OPTIMIZACIÓN FREE TIER (15 RPM / 500 RPD):
+            # Se ajusta la rumiación pasiva a 30-60 min (1800-3600s) para consumir solo ~24-48 RPD
+            espera = random.randint(1800, 3600)
             await asyncio.sleep(espera)
         except Exception as e:
             print(f"Error stream: {e}")
-            await asyncio.sleep(120)
+            await asyncio.sleep(300)
 
 
 async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
+    if not texto or not texto.strip():
+        return
+
     async with httpx.AsyncClient(timeout=30.0) as http_client:
         if bytes_imagen_mental:
             files = {"photo": ("visio.jpg", bytes_imagen_mental, "image/jpeg")}
@@ -521,7 +538,7 @@ async def telegram_webhook(request: Request):
             LAST_CHAT_ID = str(chat_id)
             texto = msg.get("caption") or msg.get("text") or ""
             
-            if chat_id and texto:
+            if chat_id and texto.strip():
                 respuesta, bytes_img = await procesar_estimulo_multimodal(texto, origen="telegram")
                 if respuesta:
                     await enviar_telegram_texto_y_voz(chat_id, respuesta, bytes_imagen_mental=bytes_img)
@@ -532,6 +549,8 @@ async def telegram_webhook(request: Request):
 
 @app.get("/preguntar")
 async def preguntar(q: str):
+    if not q.strip():
+        return {"respuesta": "[Sin estímulo válido]"}
     respuesta, _ = await procesar_estimulo_multimodal(q, origen="dashboard")
     return {"respuesta": respuesta or "[Inhibición motor prefrontal]"}
 
@@ -609,4 +628,3 @@ async function enviar(){
 @app.get("/")
 def root():
     return {"status": "LUMI ACTIVA", "estado": homeostasis.obtener_estado()}
-
