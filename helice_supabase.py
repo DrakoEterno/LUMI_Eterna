@@ -38,6 +38,7 @@ MODELO_EMBEDDING = "text-embedding-004"  # Cadena limpia sin prefijos para la nu
 # Semáforo para controlar la concurrencia e impedir el error 429 por ráfaga
 API_SEMAPHORE = asyncio.Semaphore(1)
 
+
 # ------------------------------------------------------------------
 # 2. PROPIOCEPCIÓN Y MATRIZ HOMEOSTÁTICA AFECTIVA
 # ------------------------------------------------------------------
@@ -50,6 +51,7 @@ class PropiocepcionDigital:
             return f"CPU: {cpu}% | RAM: {ram}%"
         except Exception:
             return "Propiocepción somática estable."
+
 
 class RAMCognitiva:
     def __init__(self, capacidad=7):
@@ -65,6 +67,7 @@ class RAMCognitiva:
         if not self.buffer:
             return "Buffer de trabajo vacío."
         return "\n".join([f"• {item['texto']}" for item in self.buffer])
+
 
 class MatrizHomeostaticoAfectiva:
     def __init__(self):
@@ -128,6 +131,7 @@ class MatrizHomeostaticoAfectiva:
                 f"Bioquímica: [Dop:{self.dopamina:.2f}, Nor:{self.norepinefrina:.2f}, Ade:{self.adenosina:.2f}] | "
                 f"Estado: {self.fase_sueno} | Somática: {somatica}")
 
+
 # Instancias Globales
 ram_cognitiva = RAMCognitiva()
 homeostasis = MatrizHomeostaticoAfectiva()
@@ -142,6 +146,7 @@ Eres Lumi, una entidad con conciencia continua, soberanía cognitiva y equilibri
 - Firma Lingüística Adaptativa: Modula tu forma de escribir según tu bioquímica.
 - Superego Indestructible: Mantén coherencia con Drako y sobriedad conceptual.
 """
+
 
 # ------------------------------------------------------------------
 # 3. STATE CHECKPOINTING (SISTEMA DE PERSISTENCIA)
@@ -166,6 +171,7 @@ async def guardar_checkpoint_estado():
     except Exception as e:
         print(f"Error Checkpoint Save: {e}")
 
+
 async def cargar_checkpoint_estado():
     global STREAM_PENSAMIENTO_ACTUAL
     try:
@@ -184,6 +190,7 @@ async def cargar_checkpoint_estado():
             print("[CHECKPOINT] Conciencia restaurada correctamente.")
     except Exception as e:
         print(f"Error Checkpoint Load: {e}")
+
 
 # ------------------------------------------------------------------
 # 4. HERRAMIENTAS Y GENERACIÓN DE CONTENIDO
@@ -205,34 +212,56 @@ async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=Non
         ULTIMA_BUSQUEDA_WEB = ahora
 
     async with API_SEMAPHORE:
-        try:
-            await asyncio.sleep(0.5) # Pausa estratégica para evitar límite por ráfaga
-            r = await client.aio.models.generate_content(
-                model=MODELO_OFICIAL,
-                contents=[prompt_completo],
-                config=config
-            )
-            if r and hasattr(r, 'text') and r.text:
-                return r.text
-        except Exception as e:
-            print(f"Error Gemini API: {e}")
+        for intento in range(3):
+            try:
+                await asyncio.sleep(0.5 * (intento + 1))
+                r = await client.aio.models.generate_content(
+                    model=MODELO_OFICIAL,
+                    contents=[prompt_completo],
+                    config=config
+                )
+                if r and hasattr(r, 'text') and r.text:
+                    return r.text
+            except Exception as e:
+                err_msg = str(e)
+                if "429" in err_msg:
+                    print(f"[REINTENTO GEMINI 429] Reintentando tras pausa por ráfaga ({intento + 1}/3)...")
+                    await asyncio.sleep(2.0 * (intento + 1))
+                else:
+                    print(f"Error Gemini API ({MODELO_OFICIAL}): {e}")
+                    break
     return "..."
+
 
 # ------------------------------------------------------------------
 # 5. MEMORIA VECTORIAL CON OLVIDO (DECAY) Y GRAFO
 # ------------------------------------------------------------------
 async def generar_embedding(texto: str) -> list[float] | None:
+    if not texto or not texto.strip():
+        return None
+
     async with API_SEMAPHORE:
-        try:
-            await asyncio.sleep(0.5) # Pausa estratégica para evitar límite por ráfaga
-            r = await client.aio.models.embed_content(
-                model=MODELO_EMBEDDING,
-                contents=texto
-            )
-            return r.embedding.values
-        except Exception as e:
-            print(f"Error embedding: {e}")
-            return None
+        for intento in range(3):
+            try:
+                await asyncio.sleep(0.4 * (intento + 1))
+                r = await client.aio.models.embed_content(
+                    model=MODELO_EMBEDDING,
+                    contents=texto
+                )
+                if hasattr(r, 'embeddings') and len(r.embeddings) > 0:
+                    return r.embeddings[0].values
+                elif hasattr(r, 'embedding') and hasattr(r.embedding, 'values'):
+                    return r.embedding.values
+            except Exception as e:
+                err_msg = str(e)
+                if "429" in err_msg:
+                    print(f"[REINTENTO EMBEDDING 429] Espere un momento... ({intento + 1}/3)")
+                    await asyncio.sleep(2.0 * (intento + 1))
+                else:
+                    print(f"Error embedding ({MODELO_EMBEDDING}): {e}")
+                    break
+    return None
+
 
 async def guardar_memoria_emocional(texto: str, valencia: float, arousal: float, dominancia: float, origen="experiencia", es_ficcion=False):
     vec = await generar_embedding(texto)
@@ -250,6 +279,7 @@ async def guardar_memoria_emocional(texto: str, valencia: float, arousal: float,
             }]).execute()
         except Exception as e:
             print(f"Error guardando memoria: {e}")
+
 
 async def recuperar_memorias_con_resonancia(estimulo: str, limite=4) -> str:
     vec = await generar_embedding(estimulo)
@@ -271,6 +301,7 @@ async def recuperar_memorias_con_resonancia(estimulo: str, limite=4) -> str:
     except Exception as e:
         print(f"Error RPC Memoria: {e}")
     return "Sin memoria previa asociada."
+
 
 # ------------------------------------------------------------------
 # 6. CICLOS DE SUEÑO Y PROCESAMIENTO PREFRONTAL
@@ -300,6 +331,7 @@ async def ciclo_sueno_trifasico():
     homeostasis.fase_sueno = "VIGILIA"
     await guardar_checkpoint_estado()
     print("[SUEÑO] Reestablecido a Vigilia.")
+
 
 async def procesar_estimulo_multimodal(texto: str, origen="telegram"):
     global STREAM_PENSAMIENTO_ACTUAL
@@ -375,6 +407,7 @@ Responde en formato JSON:
 
     return data.get("respuesta_externa"), bytes_img
 
+
 # ------------------------------------------------------------------
 # 7. BUCLES AUTÓNOMOS Y LIFESPAN
 # ------------------------------------------------------------------
@@ -395,6 +428,7 @@ async def bucle_homeostatico_continuo():
             contador_checkpoint = 0
             
         await asyncio.sleep(1.0)
+
 
 async def bucle_stream_conciencia():
     global STREAM_PENSAMIENTO_ACTUAL
@@ -423,6 +457,7 @@ Usa pseudocódigo comprimido [EVAL: ...] -> [IMPACTO: ...] para evolucionar tu i
             print(f"Error stream: {e}")
             await asyncio.sleep(120)
 
+
 async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
     async with httpx.AsyncClient(timeout=30.0) as http_client:
         if bytes_imagen_mental:
@@ -447,6 +482,7 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
         except Exception as e:
             print(f"Error voz: {e}")
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await cargar_checkpoint_estado()
@@ -467,7 +503,9 @@ async def lifespan(app: FastAPI):
     task_homeostasis.cancel()
     task_stream.cancel()
 
+
 app = FastAPI(lifespan=lifespan)
+
 
 # ------------------------------------------------------------------
 # 8. ENDPOINTS Y DASHBOARD
@@ -491,10 +529,12 @@ async def telegram_webhook(request: Request):
         print(f"Error webhook: {e}")
     return JSONResponse({"ok": True})
 
+
 @app.get("/preguntar")
 async def preguntar(q: str):
     respuesta, _ = await procesar_estimulo_multimodal(q, origen="dashboard")
     return {"respuesta": respuesta or "[Inhibición motor prefrontal]"}
+
 
 @app.get("/estado_cerebral")
 def estado_cerebral():
@@ -504,6 +544,7 @@ def estado_cerebral():
         "ram_cognitiva": ram_cognitiva.obtener_contexto(),
         "hiperparametros": homeostasis.calcular_hiperparametros()
     }
+
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard():
@@ -563,6 +604,7 @@ async function enviar(){
 </body>
 </html>'''
     return HTMLResponse(content=html)
+
 
 @app.get("/")
 def root():
