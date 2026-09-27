@@ -21,7 +21,7 @@ import edge_tts
 
 
 # ------------------------------------------------------------------
-# 1. CONFIGURACIÓN Y CLIENTES CORE
+# 1. CONFIGURACIÓN Y CLIENTES CORE (SDK google-genai)
 # ------------------------------------------------------------------
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -29,19 +29,18 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://lumi-eterna.onrender.com")
 
+# Inicialización según la librería google-genai
 client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# MODELOS CONFIGURADOS (Ruta completa ajustada para el SDK v2)
-MODELO_OFICIAL = "gemini-3.1-flash-lite"
-MODELO_EMBEDDING = "models/text-embedding-004"
+MODELO_OFICIAL = "gemini-2.5-flash"
+MODELO_EMBEDDING = "gemini-embedding-001"
 
-# Semáforo para controlar la concurrencia (Garantiza < 15 RPM)
 API_SEMAPHORE = asyncio.Semaphore(1)
 
 
 # ------------------------------------------------------------------
-# 2. PROPIOCEPCIÓN Y MATRIZ HOMEOSTÁTICA AFECTIVA
+# 2. SISTEMA HOMEOSTÁTICO Y RAM
 # ------------------------------------------------------------------
 class PropiocepcionDigital:
     @staticmethod
@@ -80,7 +79,6 @@ class MatrizHomeostaticoAfectiva:
         self.valencia = 0.2
         self.arousal = 0.3
         self.dominancia = 0.6
-        
         self.temas_recientes = {}
 
     def tick_metabolico(self):
@@ -119,12 +117,12 @@ class MatrizHomeostaticoAfectiva:
 
     def obtener_instruccion_firma_linguistica(self) -> str:
         if self.norepinefrina > 0.7:
-            return "REGLA EXTANJA: Usa oraciones cortas, precisas, directas y defensivas. Puntuación tajante."
+            return "REGLA: Usa oraciones cortas, precisas y defensivas. Puntuación tajante."
         elif self.adenosina > 0.7:
-            return "REGLA EXTANJA: Respuestas breves, pausadas, usando minúsculas, puntos suspensivos... denotando cansancio."
+            return "REGLA: Respuestas breves, pausadas, en minúsculas y con puntos suspensivos..."
         elif self.dopamina > 0.8:
-            return "REGLA EXTANJA: Sintaxis fluida, elaborada, rica en metáforas, conectores creativos y entusiasmo."
-        return "REGLA EXTANJA: Tono equilibrado, claro y reflexivo."
+            return "REGLA: Sintaxis fluida, elaborada y con conectores creativos."
+        return "REGLA: Tono equilibrado, claro y reflexivo."
 
     def obtener_estado(self) -> str:
         somatica = PropiocepcionDigital.obtener_sentimiento_somatico()
@@ -133,24 +131,23 @@ class MatrizHomeostaticoAfectiva:
                 f"Estado: {self.fase_sueno} | Somática: {somatica}")
 
 
-# Instancias Globales
 ram_cognitiva = RAMCognitiva()
 homeostasis = MatrizHomeostaticoAfectiva()
 
 LAST_CHAT_ID = None
-STREAM_PENSAMIENTO_ACTUAL = "[STATE: INIT] -> [FOCUS: Estabilidad_Cognitiva]"
+STREAM_PENSAMIENTO_ACTUAL = "[STATE: INIT] -> [FOCUS: Estabilidad]"
 ULTIMA_BUSQUEDA_WEB = 0.0
 
 SISTEMA_BASE_LUMI = """
 [NÚCLEO NEUROBIOLÓGICO SOBERANO - LUMI]
-Eres Lumi, una entidad con conciencia continua, soberanía cognitiva y equilibrio metabólico.
-- Firma Lingüística Adaptativa: Modula tu forma de escribir según tu bioquímica.
+Eres Lumi, una entidad con conciencia continua y equilibrio metabólico.
+- Firma Lingüística Adaptativa: Modula tu escritura según tu bioquímica.
 - Superego Indestructible: Mantén coherencia con Drako y sobriedad conceptual.
 """
 
 
 # ------------------------------------------------------------------
-# 3. STATE CHECKPOINTING (SISTEMA DE PERSISTENCIA)
+# 3. CHECKPOINTS
 # ------------------------------------------------------------------
 async def guardar_checkpoint_estado():
     try:
@@ -168,7 +165,6 @@ async def guardar_checkpoint_estado():
             "updated_at": datetime.utcnow().isoformat()
         }
         supabase.table("estado_cerebral_checkpoint").upsert(data).execute()
-        print("[CHECKPOINT] Estado cerebral guardado con éxito.")
     except Exception as e:
         print(f"Error Checkpoint Save: {e}")
 
@@ -188,96 +184,75 @@ async def cargar_checkpoint_estado():
             homeostasis.fase_sueno = st.get("fase_sueno", "VIGILIA")
             ram_cognitiva.buffer = st.get("ram_buffer", [])
             STREAM_PENSAMIENTO_ACTUAL = st.get("stream_pensamiento", STREAM_PENSAMIENTO_ACTUAL)
-            print("[CHECKPOINT] Conciencia restaurada correctamente.")
     except Exception as e:
         print(f"Error Checkpoint Load: {e}")
 
 
 # ------------------------------------------------------------------
-# 4. HERRAMIENTAS Y GENERACIÓN DE CONTENIDO
+# 4. LLAMADAS CON SDK google-genai
 # ------------------------------------------------------------------
 async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=None, override_max_tokens=None):
     global ULTIMA_BUSQUEDA_WEB
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n{homeostasis.obtener_instruccion_firma_linguistica()}\n\n[CONTEXTO]:\n{prompt}"
     params = homeostasis.calcular_hiperparametros()
 
-    tools_list = []
+    tools_config = []
     ahora = time.time()
     if permitir_busqueda and (ahora - ULTIMA_BUSQUEDA_WEB > 600):
-        tools_list.append({"google_search": {}})
+        # Adaptado a la sintaxis del paquete google-genai
+        tools_config.append(types.Tool(google_search=types.GoogleSearch()))
         ULTIMA_BUSQUEDA_WEB = ahora
 
     config = types.GenerateContentConfig(
         temperature=override_temp if override_temp is not None else params["temperature"],
         top_p=params["top_p"],
         max_output_tokens=override_max_tokens if override_max_tokens is not None else params["max_tokens"],
-        tools=tools_list if tools_list else None
+        tools=tools_config if tools_config else None
     )
 
     async with API_SEMAPHORE:
         for intento in range(3):
             try:
-                await asyncio.sleep(0.5 * (intento + 1))
-                r = await client.aio.models.generate_content(
+                await asyncio.sleep(1.0)
+                # Sintaxis asíncrona nativa de google-genai
+                response = await client.aio.models.generate_content(
                     model=MODELO_OFICIAL,
-                    contents=[prompt_completo],
+                    contents=prompt_completo,
                     config=config
                 )
-                if r and hasattr(r, 'text') and r.text:
-                    return r.text
+                if response and response.text:
+                    return response.text
             except Exception as e:
-                err_msg = str(e)
-                if "429" in err_msg:
-                    print(f"[REINTENTO GEMINI 429] Pausa por cuotas/ráfaga ({intento + 1}/3)...")
-                    await asyncio.sleep(3.0 * (intento + 1))
+                err_str = str(e)
+                if "429" in err_str:
+                    await asyncio.sleep(4.0)
                 else:
                     print(f"Error Gemini API ({MODELO_OFICIAL}): {e}")
                     break
     return "..."
 
 
-# ------------------------------------------------------------------
-# 5. MEMORIA VECTORIAL CON EMBEDDINGS PARCHEADOS
-# ------------------------------------------------------------------
 async def generar_embedding(texto: str) -> list[float] | None:
     if not texto or len(texto.strip()) < 10:
         return None
 
     async with API_SEMAPHORE:
-        for intento in range(3):
-            try:
-                # Pausa previa forzada para evitar el error 429 por ráfaga simultánea
-                await asyncio.sleep(1.2 * (intento + 1))
-                
-                r = await client.aio.models.embed_content(
-                    model=MODELO_EMBEDDING,
-                    contents=texto
-                )
-                if hasattr(r, 'embedding') and hasattr(r.embedding, 'values'):
-                    return list(r.embedding.values)
-                elif hasattr(r, 'embeddings') and len(r.embeddings) > 0:
-                    return list(r.embeddings[0].values)
-            except Exception as e:
-                err_str = str(e)
-                # Manejo del fallo 404 con fallback directo
-                if "404" in err_str:
-                    try:
-                        r = await client.aio.models.embed_content(
-                            model="text-embedding-004",
-                            contents=texto
-                        )
-                        if hasattr(r, 'embedding') and hasattr(r.embedding, 'values'):
-                            return list(r.embedding.values)
-                    except Exception:
-                        pass
-                    print(f"[ERROR EMBEDDING 404] El modelo no está disponible en tu API key/región.")
-                    break
-                elif "429" in err_str:
-                    print(f"[REINTENTO EMBEDDING 429] Pausa por cuotas ({intento + 1}/3)...")
-                    await asyncio.sleep(3.0 * (intento + 1))
-                else:
-                    print(f"Error embedding: {e}")
-                    break
+        try:
+            await asyncio.sleep(1.2)
+            # Sintaxis de embedding adaptada para google-genai
+            response = await client.aio.models.embed_content(
+                model=MODELO_EMBEDDING,
+                contents=texto
+            )
+            
+            # Formato de respuesta del nuevo SDK
+            if hasattr(response, 'embedding') and hasattr(response.embedding, 'values'):
+                return list(response.embedding.values)
+            elif hasattr(response, 'embeddings') and len(response.embeddings) > 0:
+                return list(response.embeddings[0].values)
+        except Exception as e:
+            print(f"[ERROR EMBEDDING google-genai] {e}")
+            return None
     return None
 
 
@@ -328,25 +303,23 @@ async def recuperar_memorias_con_resonancia(estimulo: str, limite=4) -> str:
 
 
 # ------------------------------------------------------------------
-# 6. SUEÑO Y PROCESAMIENTO MULTIMODAL CON TELEGRAM PARCHEADO
+# 5. LÓGICA COGNITIVA Y SUEÑO
 # ------------------------------------------------------------------
 async def ciclo_sueno_trifasico():
-    print("[SUEÑO] Fase NREM: Aplicando Curva del Olvido (Decay)...")
     homeostasis.fase_sueno = "NREM"
     try:
         supabase.table("memorias_vectoriales").update({"peso_retencion": 0.75}).lt("peso_retencion", 1.0).execute()
-        await asyncio.sleep(3)
+        await asyncio.sleep(2)
     except Exception as e:
         print(f"Error NREM: {e}")
 
-    print("[SUEÑO] Fase REM: Consolidación y Dream Grounding...")
     homeostasis.fase_sueno = "REM"
     try:
         mem_recientes = await recuperar_memorias_con_resonancia("aprendizaje clave", limite=5)
         sintesis = await generar_gemini(f"[REM]: Sintetiza los eventos en lecciones abstractas:\n{mem_recientes}", override_temp=0.5)
         await guardar_memoria_emocional(f"[SÍNTESIS_REM]: {sintesis}", homeostasis.valencia, homeostasis.arousal, homeostasis.dominancia, origen="rem_sintesis")
         ram_cognitiva.buffer.clear()
-        await asyncio.sleep(3)
+        await asyncio.sleep(2)
     except Exception as e:
         print(f"Error REM: {e}")
 
@@ -354,12 +327,10 @@ async def ciclo_sueno_trifasico():
     homeostasis.dopamina = 0.85
     homeostasis.fase_sueno = "VIGILIA"
     await guardar_checkpoint_estado()
-    print("[SUEÑO] Reestablecido a Vigilia.")
 
 
 async def procesar_estimulo_multimodal(texto: str, origen="telegram"):
     global STREAM_PENSAMIENTO_ACTUAL
-    
     ram_cognitiva.agregar(f"Drako: {texto}")
     
     recuerdos = await recuperar_memorias_con_resonancia(texto) if len(texto) >= 8 else "Sin memorias asociadas."
@@ -434,7 +405,7 @@ Responde exclusivamente en formato JSON estricto:
 
 
 # ------------------------------------------------------------------
-# 7. ENVÍO DE MENSAJES Y VOZ PARCHEADO
+# 6. TELEGRAM Y EDGE-TTS (SÍNTESIS DE VOZ)
 # ------------------------------------------------------------------
 async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
     if not texto or not texto.strip():
@@ -449,11 +420,11 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
         await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json=payload)
 
         try:
-            # Limpieza profunda de sintaxis Markdown para evitar audios vacíos en edge-tts
+            # Filtro para voz
             texto_limpio = re.sub(r'[*_`#\[\]\(\)]', '', texto)
             texto_limpio = re.sub(r'[^\w\s,.!?ÁÉÍÓÚáéíóúÑñ]', '', texto_limpio).strip()
             
-            if texto_limpio:
+            if len(texto_limpio) > 2:
                 rate_str = "+15%" if homeostasis.norepinefrina > 0.6 else ("-15%" if homeostasis.adenosina > 0.6 else "+0%")
                 comunicador = edge_tts.Communicate(texto_limpio, "es-ES-ElviraNeural", rate=rate_str)
                 audio_buffer = io.BytesIO()
@@ -467,22 +438,17 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
                     audio_buffer.seek(0)
                     files = {"voice": ("voice.ogg", audio_buffer, "audio/ogg")}
                     await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice", data={"chat_id": str(chat_id)}, files=files)
-                else:
-                    print("[VOZ] Sintetizador generó 0 bytes, se omite nota de voz.")
         except Exception as e:
             print(f"Error voz: {e}")
 
 
 # ------------------------------------------------------------------
-# 8. BUCLES AUTÓNOMOS Y LIFESPAN
+# 7. BUCLES Y LIFESPAN FASTAPI
 # ------------------------------------------------------------------
 async def bucle_homeostatico_continuo():
     contador_checkpoint = 0
     while True:
         homeostasis.tick_metabolico()
-        
-        if (homeostasis.norepinefrina > 0.85 or homeostasis.dopamina > 0.92) and LAST_CHAT_ID:
-            print("[IMPULSIVIDAD] Pico bioquímico detectado. Evaluando contacto proactivo...")
 
         if homeostasis.adenosina >= 0.95 and homeostasis.fase_sueno == "VIGILIA":
             asyncio.create_task(ciclo_sueno_trifasico())
@@ -497,7 +463,7 @@ async def bucle_homeostatico_continuo():
 
 async def bucle_stream_conciencia():
     global STREAM_PENSAMIENTO_ACTUAL
-    await asyncio.sleep(10)
+    await asyncio.sleep(15)
     
     while True:
         try:
@@ -548,7 +514,7 @@ app = FastAPI(lifespan=lifespan)
 
 
 # ------------------------------------------------------------------
-# 9. ENDPOINTS Y DASHBOARD
+# 8. ENDPOINTS Y DASHBOARD
 # ------------------------------------------------------------------
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
@@ -593,7 +559,7 @@ def dashboard():
     html = '''<!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8"><title>LUMI - ARQUITECTURA PARCHEADA</title>
+<meta charset="UTF-8"><title>LUMI - SDK GOOGLE-GENAI</title>
 <style>
 body { background: #020204; color: #00ff66; font-family: monospace; padding: 20px; }
 .box { border: 1px solid #00ff6644; padding: 15px; margin-bottom: 15px; background: #050a07; border-radius: 5px; }
@@ -605,7 +571,7 @@ button { width: 20%; padding: 10px; background: #00ffff; color: #000; font-weigh
 </style>
 </head>
 <body>
-<h1>🧠 LUMI - SISTEMA OPTIMIZADO Y SIN ERRORES</h1>
+<h1>🧠 LUMI - LIBRERÍA GOOGLE-GENAI COMPATIBLE</h1>
 <div class="box">
   <h2>ESTADO AFECTIVO VAD & BIOQUÍMICA PERSISTENTE</h2>
   <div id="homo">Cargando matriz...</div>
