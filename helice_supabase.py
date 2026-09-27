@@ -199,7 +199,7 @@ async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=Non
     ahora = time.time()
     if permitir_busqueda and (ahora - ULTIMA_BUSQUEDA_WEB > 600):
         tools_config.append(types.Tool(google_search=types.GoogleSearch()))
-        ULTIMA_BUSQUEDA_WEB = me
+        ULTIMA_BUSQUEDA_WEB = ahora
 
     config = types.GenerateContentConfig(
         temperature=override_temp if override_temp is not None else params["temperature"],
@@ -425,7 +425,7 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
             except Exception as e:
                 print(f"Error foto: {e}")
 
-        # 2. Mensaje de Texto (sin parse_mode para evitar fallos de formato)
+        # 2. Mensaje de Texto
         try:
             payload = {"chat_id": str(chat_id), "text": texto}
             await http_client.post(
