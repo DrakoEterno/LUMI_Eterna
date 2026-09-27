@@ -32,8 +32,7 @@ client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 MODELO_OFICIAL = "gemini-3.1-flash-lite"
-# CORRECCIÓN 1: Prefijo 'models/' explícito para evitar error 404 en la API v1beta
-MODELO_EMBEDDING = "models/text-embedding-004"
+MODELO_EMBEDDING = "text-embedding-004"
 
 # ------------------------------------------------------------------
 # 2. PROPIOCEPCIÓN Y MATRIZ HOMEOSTÁTICA AFECTIVA
@@ -74,7 +73,6 @@ class MatrizHomeostaticoAfectiva:
         self.arousal = 0.3
         self.dominancia = 0.6
         
-        # Anhedonia / Saciedad
         self.temas_recientes = {}
 
     def tick_metabolico(self):
@@ -219,7 +217,11 @@ async def generar_gemini(prompt: str, permitir_busqueda=False, override_temp=Non
 # ------------------------------------------------------------------
 async def generar_embedding(texto: str) -> list[float] | None:
     try:
-        r = await client.aio.models.embed_content(model=MODELO_EMBEDDING, contents=texto)
+        # Solución al error 404: Usar exactamente 'text-embedding-004'
+        r = await client.aio.models.embed_content(
+            model="text-embedding-004",
+            contents=texto
+        )
         return r.embedding.values
     except Exception as e:
         print(f"Error embedding: {e}")
@@ -381,7 +383,7 @@ async def bucle_homeostatico_continuo():
             asyncio.create_task(ciclo_sueno_trifasico())
         
         contador_checkpoint += 1
-        if contador_checkpoint >= 300: # Cada 5 minutos
+        if contador_checkpoint >= 300:
             asyncio.create_task(guardar_checkpoint_estado())
             contador_checkpoint = 0
             
@@ -389,7 +391,7 @@ async def bucle_homeostatico_continuo():
 
 async def bucle_stream_conciencia():
     global STREAM_PENSAMIENTO_ACTUAL
-    await asyncio.sleep(5)
+    await asyncio.sleep(10)
     
     while True:
         try:
@@ -408,12 +410,12 @@ Usa pseudocódigo comprimido [EVAL: ...] -> [IMPACTO: ...] para evolucionar tu i
                     
                 STREAM_PENSAMIENTO_ACTUAL = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
                 
-            # CORRECCIÓN 2: Intervalo extendido para proteger la cuota de la API (Evita error 429)
-            espera = random.randint(300, 600)
+            # Solución al error 429: Pausa extendida entre 8 y 15 minutos para respetar límites de API
+            espera = random.randint(480, 900)
             await asyncio.sleep(espera)
         except Exception as e:
             print(f"Error stream: {e}")
-            await asyncio.sleep(60)
+            await asyncio.sleep(120)
 
 async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
     async with httpx.AsyncClient(timeout=30.0) as http_client:
@@ -424,7 +426,7 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
         payload = {"chat_id": str(chat_id), "text": texto, "parse_mode": "Markdown"}
         await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json=payload)
 
-        # CORRECCIÓN 3: Sanitizado de texto para evitar fallo 'No audio was received' en edge-tts
+        # Solución al error de voz: Limpieza de texto previa para edge-tts
         try:
             texto_limpio = re.sub(r'[^\w\s,.!?ÁÉÍÓÚáéíóúÑñ]', '', texto).strip()
             if texto_limpio:
@@ -538,8 +540,8 @@ async function poll(){
     document.getElementById('stream').innerText = j.stream_conciencia_densa;
   } catch(e){}
 }
-/* CORRECCIÓN 4: Polling ajustado a 6000ms para evitar sobrecargar las peticiones */
-setInterval(poll, 6000);
+// Polling a 10000ms (10s) para evitar saturación de peticiones
+setInterval(poll, 10000);
 
 async function enviar(){
   let el = document.getElementById('inp');
