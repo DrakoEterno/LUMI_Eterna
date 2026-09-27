@@ -33,7 +33,7 @@ client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # MODELOS CONFIGURADOS
-MODELO_OFICIAL = "gemini-2.5-flash"
+MODELO_OFICIAL = "gemini-3.1-flash-lite"
 MODELO_EMBEDDING = "text-embedding-004"
 
 # Semáforo para controlar la concurrencia (Garantiza < 15 RPM)
