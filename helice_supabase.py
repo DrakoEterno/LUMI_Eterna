@@ -394,18 +394,28 @@ Responde exclusivamente en formato JSON estricto:
 
 
 # ------------------------------------------------------------------
-# 7. TELEGRAM Y GENERACIÓN DE VOZ (gTTS)
+# 7. TELEGRAM Y GENERACIÓN DE VOZ BLINDADA
 # ------------------------------------------------------------------
-def generar_audio_bytes(texto: str) -> bytes:
-    texto_limpio = re.sub(r'[*_`#\[\]\(\)]', ' ', texto)
-    texto_limpio = re.sub(r'[^\w\s,.!?ÁÉÍÓÚáéíóúÑñ]', '', texto_limpio).strip()
-    if not texto_limpio:
-        texto_limpio = "Mensaje procesado."
+def generar_audio_bytes(texto: str) -> bytes | None:
+    if not texto:
+        return None
 
-    tts = gTTS(text=texto_limpio, lang='es')
-    fp = io.BytesIO()
-    tts.write_to_fp(fp)
-    return fp.getvalue()
+    # Quitar sintaxis Markdown y caracteres no pronunciables
+    texto_limpio = re.sub(r'[*_`#\[\]\(\)<>]', ' ', texto)
+    texto_limpio = re.sub(r'[^\w\s,.!?ÁÉÍÓÚáéíóúÑñüÜ]', '', texto_limpio)
+    texto_limpio = re.sub(r'\s+', ' ', texto_limpio).strip()
+
+    # Si tras limpiar queda vacío o sin letras, usar frase genérica para gTTS
+    if not texto_limpio or len(texto_limpio) < 2:
+        texto_limpio = "Aquí tienes la respuesta."
+
+    try:
+        tts = gTTS(text=texto_limpio, lang='es')
+        fp = io.BytesIO()
+        tts.write_to_fp(fp)
+        return fp.getvalue()
+    except Exception:
+        return None
 
 
 async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
@@ -445,8 +455,8 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
                     data={"chat_id": str(chat_id), "title": "🔊 Escuchar a Lumi"},
                     files=files
                 )
-        except Exception as e:
-            print(f"Error audio: {e}")
+        except Exception:
+            pass
 
 
 # ------------------------------------------------------------------
@@ -627,4 +637,3 @@ async function enviar(){
 @app.get("/")
 def root():
     return {"status": "LUMI ACTIVA", "modelo": MODELO_OFICIAL, "estado": homeostasis.obtener_estado()}
-
