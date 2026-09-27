@@ -32,6 +32,7 @@ RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://lumi-eterna.onrender.com"
 client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# Configuración de modelos oficiales
 MODELO_OFICIAL = "gemini-3.1-flash-lite"
 MODELO_EMBEDDING = "gemini-embedding-001"
 
@@ -236,7 +237,7 @@ async def generar_embedding(texto: str) -> list[float] | None:
     async with API_SEMAPHORE:
         try:
             await asyncio.sleep(1.2)
-            # Forzamos la dimensión a 768 para que coincida con la tabla de Supabase
+            # Fijamos las dimensiones a 768 para que coincida con la DB de Supabase
             config_emb = types.EmbedContentConfig(output_dimensionality=768)
             response = await client.aio.models.embed_content(
                 model=MODELO_EMBEDDING,
@@ -395,38 +396,54 @@ Responde exclusivamente en formato JSON estricto:
 
 
 # ------------------------------------------------------------------
-# 7. TELEGRAM Y EDGE-TTS
+# 7. TELEGRAM Y EDGE-TTS (TEXTO + AUDIO)
 # ------------------------------------------------------------------
 async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
     if not texto or not texto.strip():
         return
 
     async with httpx.AsyncClient(timeout=30.0) as http_client:
+        # 1. Imagen si existe
         if bytes_imagen_mental:
             files = {"photo": ("visio.jpg", bytes_imagen_mental, "image/jpeg")}
-            await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", data={"chat_id": str(chat_id)}, files=files)
+            await http_client.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto",
+                data={"chat_id": str(chat_id)},
+                files=files
+            )
 
+        # 2. Enviar MENSAJE DE TEXTO
         payload = {"chat_id": str(chat_id), "text": texto, "parse_mode": "Markdown"}
-        await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json=payload)
+        await http_client.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            json=payload
+        )
 
+        # 3. Enviar MENSAJE DE VOZ
         try:
-            texto_limpio = re.sub(r'[*_`#\[\]\(\)]', '', texto)
+            texto_limpio = re.sub(r'[*_`#\[\]\(\)]', ' ', texto)
             texto_limpio = re.sub(r'[^\w\s,.!?ÁÉÍÓÚáéíóúÑñ]', '', texto_limpio).strip()
-            
-            if len(texto_limpio) > 2:
-                rate_str = "+15%" if homeostasis.norepinefrina > 0.6 else ("-15%" if homeostasis.adenosina > 0.6 else "+0%")
-                comunicador = edge_tts.Communicate(texto_limpio, "es-ES-ElviraNeural", rate=rate_str)
-                audio_buffer = io.BytesIO()
-                
-                async for chunk in comunicador.stream():
-                    if chunk["type"] == "audio":
-                        audio_buffer.write(chunk["data"])
-                
-                audio_bytes = audio_buffer.getvalue()
-                if len(audio_bytes) > 0:
-                    audio_buffer.seek(0)
-                    files = {"voice": ("voice.ogg", audio_buffer, "audio/ogg")}
-                    await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice", data={"chat_id": str(chat_id)}, files=files)
+
+            if not texto_limpio:
+                texto_limpio = "Mensaje procesado correctamente."
+
+            rate_str = "+15%" if homeostasis.norepinefrina > 0.6 else ("-15%" if homeostasis.adenosina > 0.6 else "+0%")
+            comunicador = edge_tts.Communicate(texto_limpio, "es-ES-ElviraNeural", rate=rate_str)
+            audio_buffer = io.BytesIO()
+
+            async for chunk in comunicador.stream():
+                if chunk["type"] == "audio":
+                    audio_buffer.write(chunk["data"])
+
+            audio_bytes = audio_buffer.getvalue()
+            if len(audio_bytes) > 0:
+                audio_buffer.seek(0)
+                files = {"voice": ("voice.ogg", audio_buffer, "audio/ogg")}
+                await http_client.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice",
+                    data={"chat_id": str(chat_id)},
+                    files=files
+                )
         except Exception as e:
             print(f"Error voz: {e}")
 
@@ -485,7 +502,10 @@ async def lifespan(app: FastAPI):
     if TELEGRAM_TOKEN:
         try:
             async with httpx.AsyncClient(timeout=10.0) as http_client:
-                await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook", json={"url": f"{RENDER_URL}/telegram/webhook"})
+                await http_client.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook",
+                    json={"url": f"{RENDER_URL}/telegram/webhook"}
+                )
         except Exception as e:
             print(f"Error webhook: {e}")
             
@@ -560,7 +580,7 @@ button { width: 20%; padding: 10px; background: #00ffff; color: #000; font-weigh
 </style>
 </head>
 <body>
-<h1>🧠 LUMI - EMBEDDINGS FIJADOS A 768D</h1>
+<h1>🧠 LUMI - GEMINI 3.1 FLASH-LITE (TEXTO + VOZ)</h1>
 <div class="box">
   <h2>ESTADO AFECTIVO VAD & BIOQUÍMICA PERSISTENTE</h2>
   <div id="homo">Cargando matriz...</div>
