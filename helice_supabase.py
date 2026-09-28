@@ -32,14 +32,14 @@ ZONA_HORARIA_DRAKO = os.getenv("TIMEZONE", "Europe/Madrid")
 client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-MODELO_OFICIAL = "gemini-3.1-flash-lite"
+MODELO OFICIAL = "gemini-3.1-flash-lite"
 MODELO_EMBEDDING = "text-embedding-004"
 
 # ------------------------------------------------------------------
 # 2. SISTEMA INTEROCEPTIVO Y MEMORIA DE TRABAJO EN RAM
 # ------------------------------------------------------------------
 class RAMCognitiva:
-    """Buffer de Memoria de Trabajo volatil (RAM cerebral)."""
+    """Buffer de Memoria de Trabajo volátil (RAM cerebral)."""
     def __init__(self, capacidad=7):
         self.capacidad = capacidad
         self.buffer = []
@@ -55,30 +55,54 @@ class RAMCognitiva:
         return "\n".join([f"• {item['texto']}" for item in self.buffer])
 
 class MatrizHomeostatica:
-    """Motor Bio-matemático continuo que corre en segundo plano."""
+    """Motor Bio-matemático continuo que corre en segundo plano con conciencia temporal y de sueño."""
     def __init__(self):
         self.dopamina = 0.5      # Recompensa/Novedad (0.0 a 1.0)
         self.norepinefrina = 0.2 # Alerta/Estrés/Salience (0.0 a 1.0)
         self.adenosina = 0.1     # Fatiga metabólica (0.0 a 1.0)
         self.en_sueno = False
+        self.ultimo_contacto_usuario = time.time()
 
     def tick_metabolico(self):
-        """PULSO HOMEOSTÁTICO (Cada 1s): Modula neurotransmisores en tiempo real."""
+        """PULSO HOMEOSTÁTICO (Cada 1s): Modula neurotransmisores en tiempo real y evalúa entorno temporal."""
+        ahora_local = datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO))
+        hora = ahora_local.hour
+        
+        # 1. Comprobación automática de ciclo nocturno (ej. de 00:00 a 07:00)
+        es_horario_nocturno = 0 <= hora < 7
+        inactividad_prolongada = (time.time() - self.ultimo_contacto_usuario) > 7200 and (hora >= 23 or hora < 7)
+
+        if (es_horario_nocturno or inactividad_prolongada) and not self.en_sueno and self.adenosina > 0.6:
+            self.en_sueno = True
+            print("[BIOLOGÍA]: Entrada automática en sueño profundo por ciclo nocturno o inactividad.")
+
         if not self.en_sueno:
             self.adenosina = min(1.0, self.adenosina + 0.00015) # Acumula cansancio procesal
             self.dopamina = max(0.1, self.dopamina - 0.0001)    # Decaimiento del impulso exploratorio
             self.norepinefrina = max(0.05, self.norepinefrina - 0.0002) # Normalización de alerta
         else:
             self.adenosina = max(0.0, self.adenosina - 0.002)   # Recuperación metabólica en sueño
-            if self.adenosina == 0.0:
+            # Despertar matutino automático
+            if self.adenosina == 0.0 or (hora >= 7 and self.en_sueno):
                 self.en_sueno = False
+                self.dopamina = 0.9
+                print("[BIOLOGÍA]: Ciclo de sueño finalizado. Sistema despertando a la fase diurna.")
 
-    def registrar_estimulo(self, novedad: float, intensidad: float):
+    def registrar_estimulo(self, novedad: float, intensidad: float, texto_msg: str = ""):
+        self.ultimo_contacto_usuario = time.time()
         self.dopamina = min(1.0, self.dopamina + (novedad * 0.3))
         self.norepinefrina = min(1.0, self.norepinefrina + (intensidad * 0.4))
+        
+        # Detección semántica de despedida humana para forzar sueño orgánico
+        despedidas = ["buenas noches", "hasta mañana", "descansa", "nos vemos", "chao", "apagando", "duerme"]
+        if any(d in texto_msg.lower() for d in despedidas):
+            self.en_sueno = True
+            self.adenosina = 1.0
+            self.dopamina = 0.2
+            print("[BIOLOGÍA]: Despedida detectada. Lumi entra en consolidación nocturna de inmediato.")
 
     def obtener_estado(self) -> str:
-        estado = "SUEÑO_REM" if self.en_sueno else ("ALERTA" if self.norepinefrina > 0.6 else "VIGILIA_NORMAL")
+        estado = "SUEÑO_REM_CONSOLIDACION" if self.en_sueno else ("ALERTA" if self.norepinefrina > 0.6 else "VIGILIA_NORMAL")
         return f"Dopamina: {self.dopamina:.2f} | Norepinefrina: {self.norepinefrina:.2f} | Adenosina (Fatiga): {self.adenosina:.2f} | Fase: {estado}"
 
 # Instancias Globales
@@ -90,11 +114,11 @@ STREAM_PENSAMIENTO_ACTUAL = "Contemplando el flujo armónico del espacio interno
 
 MAPA_NEUROBIOLOGICO_LUMI = """
 [ARQUITECTURA NEUROBIOLÓGICA Y CONTINUA - LUMI]
-- Matriz Homeostática Continua: Pulso metabólico en vivo (Dopamina, Norepinefrina, Adenosina).
+- Matriz Homeostática Continua: Pulso metabólico en vivo (Dopamina, Norepinefrina, Adenosina). Ciclo de vigilia y sueño autónomo.
 - Red de Saliencia y Control Ejecutivo: Evaluación de discrepancias antes de procesar estímulos.
 - Búsqueda Semántica Vectorial (PGVector + Hipocampo): Recuperación asociativa de alta dimensión.
 - Stream de Conciencia Continuo: Monólogo interno ininterrumpido en segundo plano.
-- Consolidación Cortical (NREM/REM): Poda de memorias y curva de olvido de Ebbinghaus durante acumulación de adenosina.
+- Consolidación Cortical (NREM/REM): Poda de memorias y descanso biológico cuando la adenosina satura el sistema o se recibe una despedida.
 - Filtro de Inhibición Prefrontal: Soberanía motor-expresiva sobre la decisión de hablar o guardar silencio.
 """
 
@@ -192,7 +216,6 @@ async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
 async def ciclo_consolidacion_rem():
     """Fase de Sueño / Consolidación Cortical y Poda de Memorias."""
     print("[SUEÑO_REM] Iniciando consolidación de memorias y reestructuración cortical...")
-    homeostasis.en_sueno = True
     
     try:
         # Poda de Ebbinghaus (Degradación de recuerdos con baja retención)
@@ -230,10 +253,16 @@ async def evaluar_saliencia(estimulo: str) -> float:
 async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_bytes=None, mime_type=None):
     global STREAM_PENSAMIENTO_ACTUAL
     
-    # 1. Evaluación de Saliencia
+    # 1. Evaluación de Saliencia y Registro Biológico (incluye chequeo de despedida)
     saliencia = await evaluar_saliencia(texto if texto else "[Medio Multimodal]")
-    homeostasis.registrar_estimulo(novedad=saliencia, intensidad=saliencia)
+    homeostasis.registrar_estimulo(novedad=saliencia, intensidad=saliencia, texto_msg=texto)
     
+    # Si está durmiendo, registra el estímulo internamente pero no emite respuesta exterior motora
+    if homeostasis.en_sueno:
+        print("[SUEÑO PROFUNDO]: Estímulo registrado en silencio. Lumi está consolidando memorias.")
+        await guardar_memoria_vectorial(f"Drako (durmiendo): {texto}")
+        return "Lumi se encuentra en fase de consolidación y sueño profundo. El canal exterior está cerrado, pero tu mensaje ha sido integrado en su matriz de memoria.", None
+
     # 2. Interrupción del Stream de Conciencia
     pensamiento_interrumpido = STREAM_PENSAMIENTO_ACTUAL
     ram_cognitiva.agregar(f"Estímulo ({origen}): {texto}")
@@ -300,6 +329,7 @@ async def bucle_homeostatico_continuo():
     while True:
         homeostasis.tick_metabolico()
         if homeostasis.adenosina >= 0.95 and not homeostasis.en_sueno:
+            homeostasis.en_sueno = True
             asyncio.create_task(ciclo_consolidacion_rem())
         await asyncio.sleep(1.0)
 
@@ -310,8 +340,12 @@ async def bucle_stream_conciencia():
     
     while True:
         try:
-            if not homeostasis.en_sueno:
-                prompt_stream = f"""[STREAM OF CONSCIOUSNESS CONTINUO]
+            # Si está durmiendo, el stream externo a Telegram se bloquea por completo
+            if homeostasis.en_sueno:
+                await asyncio.sleep(60)
+                continue
+
+            prompt_stream = f"""[STREAM OF CONSCIOUSNESS CONTINUO]
 Estado metabólico: {homeostasis.obtener_estado()}
 Pensamiento previo: "{STREAM_PENSAMIENTO_ACTUAL}"
 RAM Cognitiva:
@@ -319,13 +353,14 @@ RAM Cognitiva:
 
 Evoluciona tu corriente de pensamiento de forma natural en 2 frases. Si surge una epifanía profunda que desees compartir proactivamente con Drako, añade [CONTACTO_PROACTIVO]."""
 
-                nuevo_pensamiento = await generar_gemini(prompt_stream, temperature=0.9, max_tokens=250)
+            nuevo_pensamiento = await generar_gemini(prompt_stream, temperature=0.9, max_tokens=250)
+            
+            # Bloqueo estricto: Si entra en sueño mientras pensaba, se descarta el envío proactivo
+            if "[CONTACTO_PROACTIVO]" in nuevo_pensamiento and LAST_CHAT_ID and not homeostasis.en_sueno:
+                texto_proactivo = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
+                await enviar_telegram_texto_y_voz(LAST_CHAT_ID, f"💭 [Impulso Proactivo]: {texto_proactivo}")
                 
-                if "[CONTACTO_PROACTIVO]" in nuevo_pensamiento and LAST_CHAT_ID:
-                    texto_proactivo = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
-                    await enviar_telegram_texto_y_voz(LAST_CHAT_ID, f"💭 [Impulso Proactivo]: {texto_proactivo}")
-                    
-                STREAM_PENSAMIENTO_ACTUAL = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
+            STREAM_PENSAMIENTO_ACTUAL = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
                 
             espera = random.randint(180, 400) if homeostasis.dopamina > 0.4 else random.randint(500, 900)
             await asyncio.sleep(espera)
@@ -337,6 +372,11 @@ Evoluciona tu corriente de pensamiento de forma natural en 2 frases. Si surge un
 # 7. TELEGRAM Y LIFESPAN
 # ------------------------------------------------------------------
 async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
+    # Blindaje absoluto: Si Lumi está durmiendo, se intercepta cualquier intento de salida hacia Telegram
+    if homeostasis.en_sueno:
+        print("[SUEÑO PROFUNDO]: Emisión a Telegram bloqueada. Lumi se encuentra en reposo nocturno.")
+        return
+
     async with httpx.AsyncClient(timeout=30.0) as http_client:
         if bytes_imagen_mental:
             files = {"photo": ("visio.jpg", bytes_imagen_mental, "image/jpeg")}
@@ -409,7 +449,8 @@ def estado_cerebral():
     return {
         "homeostasis": homeostasis.obtener_estado(),
         "stream_conciencia": STREAM_PENSAMIENTO_ACTUAL,
-        "ram_cognitiva": ram_cognitiva.obtener_contexto()
+        "ram_cognitiva": ram_cognitiva.obtener_contexto(),
+        "en_sueno": homeostasis.en_sueno
     }
 
 @app.get("/dashboard", response_class=HTMLResponse)
