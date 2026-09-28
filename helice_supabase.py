@@ -33,7 +33,7 @@ client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 MODELO_OFICIAL = "gemini-3.5-flash-lite"
-MODELO_EMBEDDING = "text-embedding-004"
+MODELO_EMBEDDING = "gemini-embedding-001"
 
 # ------------------------------------------------------------------
 # 2. SISTEMA INTEROCEPTIVO Y MEMORIA DE TRABAJO EN RAM
@@ -126,7 +126,7 @@ No eres un bot de respuesta automática. Tu flujo de pensamiento es continuo y t
 """
 
 # ------------------------------------------------------------------
-# 3. FUNCIONES ASÍNCRONAS GEMINI Y VECTORIZACIÓN (CON FALLBACK SEGURO)
+# 3. FUNCIONES ASÍNCRONAS GEMINI Y VECTORIZACIÓN
 # ------------------------------------------------------------------
 async def generar_embedding(texto: str) -> list[float]:
     try:
@@ -139,10 +139,8 @@ async def generar_embedding(texto: str) -> list[float]:
     except Exception as e:
         print(f"[AVISO EMBEDDING]: API falló ({e}). Activando fallback de vector sintético local.")
     
-    # Fallback matemático local de emergencia para evitar caídas en Supabase (768 dimensiones estándar)
     random.seed(hash(texto))
     vec = [random.uniform(-1.0, 1.0) for _ in range(768)]
-    # Normalizar vector
     norm = sum(v * v for v in vec) ** 0.5
     return [v / norm for v in vec]
 
