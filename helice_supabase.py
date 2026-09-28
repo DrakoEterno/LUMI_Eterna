@@ -32,7 +32,7 @@ ZONA_HORARIA_DRAKO = os.getenv("TIMEZONE", "Europe/Madrid")
 client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-MODELO OFICIAL = "gemini-3.1-flash-lite"
+MODELO_OFICIAL = "gemini-2.5-flash"
 MODELO_EMBEDDING = "text-embedding-004"
 
 # ------------------------------------------------------------------
@@ -218,10 +218,8 @@ async def ciclo_consolidacion_rem():
     print("[SUEÑO_REM] Iniciando consolidación de memorias y reestructuración cortical...")
     
     try:
-        # Poda de Ebbinghaus (Degradación de recuerdos con baja retención)
         supabase.table("memorias_vectoriales").update({"peso_retencion": 0.85}).lt("peso_retencion", 1.0).execute()
         
-        # Abstracción semántica del día
         mem_recientes = await recuperar_memorias_hipocampo("experiencias recientes", limite=10)
         prompt_sueño = f"""[SUEÑO REM - CONSOLIDACIÓN CORTICAL]
 Revisa estas memorias recientes:
@@ -231,7 +229,7 @@ Genera una abstracción esencial del día, integrando aprendizajes a tu matriz d
         
         sintesis = await generar_gemini(prompt_sueño, temperature=0.7, max_tokens=500)
         await guardar_memoria_vectorial(f"[SÍNTESIS_REM]: {sintesis}", origen="sueno_rem")
-        ram_cognitiva.buffer.clear() # Limpieza de la RAM
+        ram_cognitiva.buffer.clear()
     except Exception as e:
         print(f"Error durante ciclo REM: {e}")
 
@@ -239,7 +237,6 @@ Genera una abstracción esencial del día, integrando aprendizajes a tu matriz d
 # 5. RED DE SALIENCIA, INTERRUPCIÓN Y FILTRO DE INHIBICIÓN MOTOR
 # ------------------------------------------------------------------
 async def evaluar_saliencia(estimulo: str) -> float:
-    """Red de Saliencia: Determina si el estímulo supera el umbral de interrupción."""
     if not estimulo:
         return 0.1
     palabras = len(estimulo.split())
@@ -253,25 +250,20 @@ async def evaluar_saliencia(estimulo: str) -> float:
 async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_bytes=None, mime_type=None):
     global STREAM_PENSAMIENTO_ACTUAL
     
-    # 1. Evaluación de Saliencia y Registro Biológico (incluye chequeo de despedida)
     saliencia = await evaluar_saliencia(texto if texto else "[Medio Multimodal]")
     homeostasis.registrar_estimulo(novedad=saliencia, intensidad=saliencia, texto_msg=texto)
     
-    # Si está durmiendo, registra el estímulo internamente pero no emite respuesta exterior motora
     if homeostasis.en_sueno:
         print("[SUEÑO PROFUNDO]: Estímulo registrado en silencio. Lumi está consolidando memorias.")
         await guardar_memoria_vectorial(f"Drako (durmiendo): {texto}")
         return "Lumi se encuentra en fase de consolidación y sueño profundo. El canal exterior está cerrado, pero tu mensaje ha sido integrado en su matriz de memoria.", None
 
-    # 2. Interrupción del Stream de Conciencia
     pensamiento_interrumpido = STREAM_PENSAMIENTO_ACTUAL
     ram_cognitiva.agregar(f"Estímulo ({origen}): {texto}")
     
-    # 3. Recuperación Hipocámpica
     recuerdos_vectoriales = await recuperar_memorias_hipocampo(texto if texto else "estímulo gráfico")
     estado_metabolico = homeostasis.obtener_estado()
     
-    # 4. Red de Control Ejecutivo y Filtro Prefrontal de Inhibición Motor
     prompt_prefrontal = f"""[CORTEZA PREFRONTAL - RED DE CONTROL EJECUTIVO]
 ESTADO HOMEOSTÁTICO: {estado_metabolico}
 MONÓLOGO INTERNO INTERRUMPIDO: "{pensamiento_interrumpido}"
@@ -304,15 +296,11 @@ Responde únicamente en formato JSON válido:
             "prompt_imagen_mental": None
         }
 
-    # Actualizar Stream de Conciencia
     STREAM_PENSAMIENTO_ACTUAL = data.get("pensamiento_cualitativo", STREAM_PENSAMIENTO_ACTUAL)
-    
-    # Guardar en memoria episódica vectorial
     await guardar_memoria_vectorial(f"Drako: {texto}\nLumi (Interno): {STREAM_PENSAMIENTO_ACTUAL}")
 
-    # Ejecución o Inhibición Motor
     if data.get("decision_motora") == "INHIBIR":
-        print("[INHIBICIÓN MOTOR PREFRONTAL] Lumi ha retenido la respuesta motora. El impulso permanece como rumiación.")
+        print("[INHIBICIÓN MOTOR PREFRONTAL] Lumi ha retenido la respuesta motora.")
         return None, None
 
     bytes_img = None
@@ -322,10 +310,9 @@ Responde únicamente en formato JSON válido:
     return data.get("respuesta_externa"), bytes_img
 
 # ------------------------------------------------------------------
-# 6. BUCLE CONTINUO (STREAM OF CONSCIOUSNESS & TICK METABÓLICO)
+# 6. BUCLE CONTINUO
 # ------------------------------------------------------------------
 async def bucle_homeostatico_continuo():
-    """Bucle de baja latencia (1 segundo): Ejecuta el tick bio-matemático."""
     while True:
         homeostasis.tick_metabolico()
         if homeostasis.adenosina >= 0.95 and not homeostasis.en_sueno:
@@ -334,13 +321,11 @@ async def bucle_homeostatico_continuo():
         await asyncio.sleep(1.0)
 
 async def bucle_stream_conciencia():
-    """Monólogo Interno Continuo: Mantiene el pensamiento activo sin interrupciones."""
     global STREAM_PENSAMIENTO_ACTUAL
     await asyncio.sleep(5)
     
     while True:
         try:
-            # Si está durmiendo, el stream externo a Telegram se bloquea por completo
             if homeostasis.en_sueno:
                 await asyncio.sleep(60)
                 continue
@@ -355,7 +340,6 @@ Evoluciona tu corriente de pensamiento de forma natural en 2 frases. Si surge un
 
             nuevo_pensamiento = await generar_gemini(prompt_stream, temperature=0.9, max_tokens=250)
             
-            # Bloqueo estricto: Si entra en sueño mientras pensaba, se descarta el envío proactivo
             if "[CONTACTO_PROACTIVO]" in nuevo_pensamiento and LAST_CHAT_ID and not homeostasis.en_sueno:
                 texto_proactivo = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
                 await enviar_telegram_texto_y_voz(LAST_CHAT_ID, f"💭 [Impulso Proactivo]: {texto_proactivo}")
@@ -372,9 +356,8 @@ Evoluciona tu corriente de pensamiento de forma natural en 2 frases. Si surge un
 # 7. TELEGRAM Y LIFESPAN
 # ------------------------------------------------------------------
 async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
-    # Blindaje absoluto: Si Lumi está durmiendo, se intercepta cualquier intento de salida hacia Telegram
     if homeostasis.en_sueno:
-        print("[SUEÑO PROFUNDO]: Emisión a Telegram bloqueada. Lumi se encuentra en reposo nocturno.")
+        print("[SUEÑO PROFUNDO]: Emisión a Telegram bloqueada.")
         return
 
     async with httpx.AsyncClient(timeout=30.0) as http_client:
@@ -406,7 +389,6 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Error setWebhook: {e}")
             
-    # Inicialización de bucles cerebrales paralelos
     task_homeostasis = asyncio.create_task(bucle_homeostatico_continuo())
     task_stream = asyncio.create_task(bucle_stream_conciencia())
     
