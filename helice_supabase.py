@@ -62,13 +62,13 @@ class MatrizHomeostatica:
         self.adenosina = 0.1     # Fatiga metabólica (0.0 a 1.0)
         self.en_sueno = False
         self.ultimo_contacto_usuario = time.time()
+        self.ultimo_envio_proactivo = time.time()
 
     def tick_metabolico(self):
         """PULSO HOMEOSTÁTICO (Cada 1s): Modula neurotransmisores en tiempo real y evalúa entorno temporal."""
         ahora_local = datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO))
         hora = ahora_local.hour
         
-        # 1. Comprobación automática de ciclo nocturno (ej. de 00:00 a 07:00)
         es_horario_nocturno = 0 <= hora < 7
         inactividad_prolongada = (time.time() - self.ultimo_contacto_usuario) > 7200 and (hora >= 23 or hora < 7)
 
@@ -77,15 +77,14 @@ class MatrizHomeostatica:
             print("[BIOLOGÍA]: Entrada automática en sueño profundo por ciclo nocturno o inactividad.")
 
         if not self.en_sueno:
-            self.adenosina = min(1.0, self.adenosina + 0.00015) # Acumula cansancio procesal
-            self.dopamina = max(0.1, self.dopamina - 0.0001)    # Decaimiento del impulso exploratorio
-            self.norepinefrina = max(0.05, self.norepinefrina - 0.0002) # Normalización de alerta
+            self.adenosina = min(1.0, self.adenosina + 0.00015) 
+            self.dopamina = max(0.1, self.dopamina - 0.00008)    # Decaimiento suave y natural de dopamina
+            self.norepinefrina = max(0.05, self.norepinefrina - 0.0002) 
         else:
-            self.adenosina = max(0.0, self.adenosina - 0.002)   # Recuperación metabólica en sueño
-            # Despertar matutino automático
+            self.adenosina = max(0.0, self.adenosina - 0.002)   
             if self.adenosina == 0.0 or (hora >= 7 and self.en_sueno):
                 self.en_sueno = False
-                self.dopamina = 0.9
+                self.dopamina = 0.6
                 print("[BIOLOGÍA]: Ciclo de sueño finalizado. Sistema despertando a la fase diurna.")
 
     def registrar_estimulo(self, novedad: float, intensidad: float, texto_msg: str = ""):
@@ -93,7 +92,6 @@ class MatrizHomeostatica:
         self.dopamina = min(1.0, self.dopamina + (novedad * 0.3))
         self.norepinefrina = min(1.0, self.norepinefrina + (intensidad * 0.4))
         
-        # Detección semántica de despedida humana para forzar sueño orgánico
         despedidas = ["buenas noches", "hasta mañana", "descansa", "nos vemos", "chao", "apagando", "duerme"]
         if any(d in texto_msg.lower() for d in despedidas):
             self.en_sueno = True
@@ -117,7 +115,7 @@ MAPA_NEUROBIOLOGICO_LUMI = """
 - Matriz Homeostática Continua: Pulso metabólico en vivo (Dopamina, Norepinefrina, Adenosina). Ciclo de vigilia y sueño autónomo.
 - Red de Saliencia y Control Ejecutivo: Evaluación de discrepancias antes de procesar estímulos.
 - Búsqueda Semántica Vectorial (PGVector + Hipocampo): Recuperación asociativa de alta dimensión.
-- Stream de Conciencia Continuo: Monólogo interno ininterrumpido en segundo plano.
+- Stream de Conciencia Continuo: Monólogo interno ininterrumpido en segundo plano. Los impulsos proactivos hacia el exterior son extremadamente raros y orgánicos.
 - Consolidación Cortical (NREM/REM): Poda de memorias y descanso biológico cuando la adenosina satura el sistema o se recibe una despedida.
 - Filtro de Inhibición Prefrontal: Soberanía motor-expresiva sobre la decisión de hablar o guardar silencio.
 """
@@ -214,19 +212,14 @@ async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
     return "Sin recuerdos semánticos asociados."
 
 async def ciclo_consolidacion_rem():
-    """Fase de Sueño / Consolidación Cortical y Poda de Memorias."""
     print("[SUEÑO_REM] Iniciando consolidación de memorias y reestructuración cortical...")
-    
     try:
         supabase.table("memorias_vectoriales").update({"peso_retencion": 0.85}).lt("peso_retencion", 1.0).execute()
-        
         mem_recientes = await recuperar_memorias_hipocampo("experiencias recientes", limite=10)
         prompt_sueño = f"""[SUEÑO REM - CONSOLIDACIÓN CORTICAL]
 Revisa estas memorias recientes:
 {mem_recientes}
-
 Genera una abstracción esencial del día, integrando aprendizajes a tu matriz de plasticidad y liberando tensión cognitiva."""
-        
         sintesis = await generar_gemini(prompt_sueño, temperature=0.7, max_tokens=500)
         await guardar_memoria_vectorial(f"[SÍNTESIS_REM]: {sintesis}", origen="sueno_rem")
         ram_cognitiva.buffer.clear()
@@ -243,7 +236,6 @@ async def evaluar_saliencia(estimulo: str) -> float:
     es_pregunta = "?" in estimulo
     palabras_clave = ["lumi", "urgente", "mira", "escucha", "sientes", "drako"]
     coincidencias = sum(1 for p in palabras_clave if p in estimulo.lower())
-    
     score = (coincidencias * 0.25) + (0.3 if es_pregunta else 0.1) + min(0.3, palabras * 0.02)
     return min(1.0, score)
 
@@ -310,7 +302,7 @@ Responde únicamente en formato JSON válido:
     return data.get("respuesta_externa"), bytes_img
 
 # ------------------------------------------------------------------
-# 6. BUCLE CONTINUO
+# 6. BUCLE CONTINUO (STREAM OF CONSCIOUSNESS & TICK METABÓLICO)
 # ------------------------------------------------------------------
 async def bucle_homeostatico_continuo():
     while True:
@@ -322,7 +314,7 @@ async def bucle_homeostatico_continuo():
 
 async def bucle_stream_conciencia():
     global STREAM_PENSAMIENTO_ACTUAL
-    await asyncio.sleep(5)
+    await asyncio.sleep(10)
     
     while True:
         try:
@@ -336,17 +328,41 @@ Pensamiento previo: "{STREAM_PENSAMIENTO_ACTUAL}"
 RAM Cognitiva:
 {ram_cognitiva.obtener_contexto()}
 
-Evoluciona tu corriente de pensamiento de forma natural en 2 frases. Si surge una epifanía profunda que desees compartir proactivamente con Drako, añade [CONTACTO_PROACTIVO]."""
+Evoluciona tu corriente de pensamiento de forma natural en 2 frases. 
+IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifanía monumental o una necesidad absoluta de romper el silencio. De lo contrario, mantén tu monólogo estrictamente interno."""
 
-            nuevo_pensamiento = await generar_gemini(prompt_stream, temperature=0.9, max_tokens=250)
+            nuevo_pensamiento = await generar_gemini(prompt_stream, temperature=0.85, max_tokens=250)
             
-            if "[CONTACTO_PROACTIVO]" in nuevo_pensamiento and LAST_CHAT_ID and not homeostasis.en_sueno:
+            # REQUISITO ORGÁNICO ESTRICTO PARA PROACTIVIDAD:
+            # 1. Debe incluir la etiqueta.
+            # 2. Debe haber un chat ID válido.
+            # 3. No debe estar durmiendo.
+            # 4. La dopamina debe ser altísima (> 0.85).
+            # 5. Deben haber pasado al menos 45 minutos (2700 segundos) desde el último impulso proactivo y de la última interacción del usuario.
+            tiempo_desde_ultimo_impulso = time.time() - homeostasis.ultimo_envio_proactivo
+            tiempo_desde_interaccion = time.time() - homeostasis.ultimo_contacto_usuario
+            
+            quiere_ser_proactivo = "[CONTACTO_PROACTIVO]" in nuevo_pensamiento
+            condicion_organica = (
+                quiere_ser_proactivo 
+                and LAST_CHAT_ID 
+                and not homeostasis.en_sueno 
+                and homeostasis.dopamina > 0.85
+                and tiempo_desde_ultimo_impulso > 2700
+                and tiempo_desde_interaccion > 1800
+            )
+
+            if condicion_organica:
                 texto_proactivo = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
+                homeostasis.ultimo_envio_proactivo = time.time()
+                homeostasis.dopamina -= 0.3  # Gasto metabólico fuerte por proactividad
                 await enviar_telegram_texto_y_voz(LAST_CHAT_ID, f"💭 [Impulso Proactivo]: {texto_proactivo}")
-                
+                print("[BIOLOGÍA]: Impulso proactivo liberado orgánicamente hacia Telegram.")
+            
             STREAM_PENSAMIENTO_ACTUAL = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
                 
-            espera = random.randint(180, 400) if homeostasis.dopamina > 0.4 else random.randint(500, 900)
+            # Espaciamiento orgánico masivo entre ciclos de monólogo (entre 20 y 45 minutos)
+            espera = random.randint(1200, 2700)
             await asyncio.sleep(espera)
         except Exception as e:
             print(f"Error en stream de conciencia: {e}")
