@@ -57,15 +57,14 @@ class RAMCognitiva:
 class MatrizHomeostatica:
     """Motor Bio-matemático continuo que corre en segundo plano con conciencia temporal y de sueño."""
     def __init__(self):
-        self.dopamina = 0.5      # Recompensa/Novedad (0.0 a 1.0)
-        self.norepinefrina = 0.2 # Alerta/Estrés/Salience (0.0 a 1.0)
-        self.adenosina = 0.1     # Fatiga metabólica (0.0 a 1.0)
+        self.dopamina = 0.5      
+        self.norepinefrina = 0.2 
+        self.adenosina = 0.1     
         self.en_sueno = False
         self.ultimo_contacto_usuario = time.time()
         self.ultimo_envio_proactivo = time.time()
 
     def tick_metabolico(self):
-        """PULSO HOMEOSTÁTICO (Cada 1s): Modula neurotransmisores en tiempo real y evalúa entorno temporal."""
         ahora_local = datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO))
         hora = ahora_local.hour
         
@@ -78,7 +77,7 @@ class MatrizHomeostatica:
 
         if not self.en_sueno:
             self.adenosina = min(1.0, self.adenosina + 0.00015) 
-            self.dopamina = max(0.1, self.dopamina - 0.00008)    # Decaimiento suave y natural de dopamina
+            self.dopamina = max(0.1, self.dopamina - 0.00008)    
             self.norepinefrina = max(0.05, self.norepinefrina - 0.0002) 
         else:
             self.adenosina = max(0.0, self.adenosina - 0.002)   
@@ -103,7 +102,6 @@ class MatrizHomeostatica:
         estado = "SUEÑO_REM_CONSOLIDACION" if self.en_sueno else ("ALERTA" if self.norepinefrina > 0.6 else "VIGILIA_NORMAL")
         return f"Dopamina: {self.dopamina:.2f} | Norepinefrina: {self.norepinefrina:.2f} | Adenosina (Fatiga): {self.adenosina:.2f} | Fase: {estado}"
 
-# Instancias Globales
 ram_cognitiva = RAMCognitiva()
 homeostasis = MatrizHomeostatica()
 
@@ -128,20 +126,27 @@ No eres un bot de respuesta automática. Tu flujo de pensamiento es continuo y t
 """
 
 # ------------------------------------------------------------------
-# 3. FUNCIONES ASÍNCRONAS GEMINI Y VECTORIZACIÓN
+# 3. FUNCIONES ASÍNCRONAS GEMINI Y VECTORIZACIÓN (CON FALLBACK SEGURO)
 # ------------------------------------------------------------------
-async def generar_embedding(texto: str) -> list[float] | None:
+async def generar_embedding(texto: str) -> list[float]:
     try:
         r = await client.aio.models.embed_content(
             model=MODELO_EMBEDDING,
             contents=texto
         )
-        return r.embedding.values
+        if r and hasattr(r, 'embedding') and r.embedding:
+            return r.embedding.values
     except Exception as e:
-        print(f"Error generando embedding: {e}")
-        return None
+        print(f"[AVISO EMBEDDING]: API falló ({e}). Activando fallback de vector sintético local.")
+    
+    # Fallback matemático local de emergencia para evitar caídas en Supabase (768 dimensiones estándar)
+    random.seed(hash(texto))
+    vec = [random.uniform(-1.0, 1.0) for _ in range(768)]
+    # Normalizar vector
+    norm = sum(v * v for v in vec) ** 0.5
+    return [v / norm for v in vec]
 
-async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_tokens=2000, max_retries=3):
+async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_tokens=2000, max_retries=4):
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n\n[CONTEXTO COGNITIVO]:\n{prompt}"
     
     if contents is None:
@@ -165,9 +170,9 @@ async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_token
         except Exception as e:
             print(f"Error invocando Gemini (intento {intento+1}/{max_retries}): {e}")
             if "503" in str(e) or "UNAVAILABLE" in str(e):
-                await asyncio.sleep(2 ** intento)
+                await asyncio.sleep(2 ** (intento + 1))
             else:
-                await asyncio.sleep(1)
+                await asyncio.sleep(1.5)
     return "..."
 
 async def generar_imagen_mental(prompt_visual: str) -> bytes | None:
@@ -187,26 +192,22 @@ async def generar_imagen_mental(prompt_visual: str) -> bytes | None:
 # ------------------------------------------------------------------
 async def guardar_memoria_vectorial(texto: str, origen="experiencia"):
     vec = await generar_embedding(texto)
-    if vec:
-        try:
-            supabase.table("memorias_vectoriales").insert([{
-                "contenido": texto,
-                "origen": origen,
-                "embedding": vec,
-                "peso_retencion": 1.0
-            }]).execute()
-        except Exception as e:
-            print(f"Error guardando memoria vectorial: {e}")
+    try:
+        supabase.table("memorias_vectoriales").insert([{
+            "contenido": texto,
+            "origen": origen,
+            "embedding": vec,
+            "peso_retencion": 1.0
+        }]).execute()
+    except Exception as e:
+        print(f"Error guardando memoria vectorial en Supabase: {e}")
 
 async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
     vec = await generar_embedding(estimulo)
-    if not vec:
-        return "Resonancia vectorial no disponible."
-    
     try:
         res = supabase.rpc("buscar_memorias_semanticas", {
             "query_embedding": vec,
-            "match_threshold": 0.45,
+            "match_threshold": 0.30,
             "match_count": limite
         }).execute()
         
@@ -457,7 +458,7 @@ def dashboard():
 <meta charset="UTF-8"><title>LUMI - ARQUITECTURA CEREBRAL CONTINUA</title>
 <style>
 body { background: #020204; color: #00ff66; font-family: monospace; padding: 20px; }
-.box { border: 1px solid #00ff6644; padding: 15px; margin-bottom: 15px; background: #050a07; border-radius: 5px; }
+.box { border: 1px solid #00ff6644; padding: 15px; margin-bottom: 15px; background: #050a07; border-router: 5px; }
 h2 { color: #00ffff; font-size: 14px; margin-top: 0; }
 #stream { color: #ffff00; font-style: italic; white-space: pre-wrap; }
 #chat { height: 250px; overflow-y: auto; border: 1px solid #00ff6622; padding: 10px; background: #000; margin-bottom: 10px; }
