@@ -33,7 +33,7 @@ client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 MODELO_OFICIAL = "gemini-3.5-flash-lite"
-MODELO_EMBEDDING = "text-embedding-005"
+MODELO_EMBEDDING = "embedding-001"
 
 # ------------------------------------------------------------------
 # 2. SISTEMA INTEROCEPTIVO Y MEMORIA DE TRABAJO EN RAM
@@ -141,7 +141,7 @@ async def generar_embedding(texto: str) -> list[float] | None:
         print(f"Error generando embedding: {e}")
         return None
 
-async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_tokens=2000):
+async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_tokens=2000, max_retries=3):
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n\n[CONTEXTO COGNITIVO]:\n{prompt}"
     
     if contents is None:
@@ -149,20 +149,25 @@ async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_token
     else:
         contents = [prompt_completo] + (contents if isinstance(contents, list) else [contents])
             
-    try:
-        r = await client.aio.models.generate_content(
-            model=MODELO_OFICIAL,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                temperature=temperature,
-                top_p=0.85,
-                max_output_tokens=max_tokens
+    for intento in range(max_retries):
+        try:
+            r = await client.aio.models.generate_content(
+                model=MODELO_OFICIAL,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    temperature=temperature,
+                    top_p=0.85,
+                    max_output_tokens=max_tokens
+                )
             )
-        )
-        if r and hasattr(r, 'text') and r.text:
-            return r.text
-    except Exception as e:
-        print(f"Error invocando Gemini: {e}")
+            if r and hasattr(r, 'text') and r.text:
+                return r.text
+        except Exception as e:
+            print(f"Error invocando Gemini (intento {intento+1}/{max_retries}): {e}")
+            if "503" in str(e) or "UNAVAILABLE" in str(e):
+                await asyncio.sleep(2 ** intento) # Backoff exponencial ante saturación
+            else:
+                await asyncio.sleep(1)
     return "..."
 
 async def generar_imagen_mental(prompt_visual: str) -> bytes | None:
@@ -334,11 +339,6 @@ IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifaní
             nuevo_pensamiento = await generar_gemini(prompt_stream, temperature=0.85, max_tokens=250)
             
             # REQUISITO ORGÁNICO ESTRICTO PARA PROACTIVIDAD:
-            # 1. Debe incluir la etiqueta.
-            # 2. Debe haber un chat ID válido.
-            # 3. No debe estar durmiendo.
-            # 4. La dopamina debe ser altísima (> 0.85).
-            # 5. Deben haber pasado al menos 45 minutos (2700 segundos) desde el último impulso proactivo y de la última interacción del usuario.
             tiempo_desde_ultimo_impulso = time.time() - homeostasis.ultimo_envio_proactivo
             tiempo_desde_interaccion = time.time() - homeostasis.ultimo_contacto_usuario
             
@@ -361,7 +361,6 @@ IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifaní
             
             STREAM_PENSAMIENTO_ACTUAL = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
                 
-            # Espaciamiento orgánico masivo entre ciclos de monólogo (entre 20 y 45 minutos)
             espera = random.randint(1200, 2700)
             await asyncio.sleep(espera)
         except Exception as e:
