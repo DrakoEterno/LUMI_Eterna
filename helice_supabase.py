@@ -33,7 +33,7 @@ client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 MODELO_OFICIAL = "gemini-3.5-flash-lite"
-MODELO_EMBEDDING = "embedding-001"
+MODELO_EMBEDDING = "text-embedding-004"
 
 # ------------------------------------------------------------------
 # 2. SISTEMA INTEROCEPTIVO Y MEMORIA DE TRABAJO EN RAM
@@ -165,7 +165,7 @@ async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_token
         except Exception as e:
             print(f"Error invocando Gemini (intento {intento+1}/{max_retries}): {e}")
             if "503" in str(e) or "UNAVAILABLE" in str(e):
-                await asyncio.sleep(2 ** intento) # Backoff exponencial ante saturación
+                await asyncio.sleep(2 ** intento)
             else:
                 await asyncio.sleep(1)
     return "..."
@@ -338,7 +338,6 @@ IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifaní
 
             nuevo_pensamiento = await generar_gemini(prompt_stream, temperature=0.85, max_tokens=250)
             
-            # REQUISITO ORGÁNICO ESTRICTO PARA PROACTIVIDAD:
             tiempo_desde_ultimo_impulso = time.time() - homeostasis.ultimo_envio_proactivo
             tiempo_desde_interaccion = time.time() - homeostasis.ultimo_contacto_usuario
             
@@ -355,7 +354,7 @@ IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifaní
             if condicion_organica:
                 texto_proactivo = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
                 homeostasis.ultimo_envio_proactivo = time.time()
-                homeostasis.dopamina -= 0.3  # Gasto metabólico fuerte por proactividad
+                homeostasis.dopamina -= 0.3
                 await enviar_telegram_texto_y_voz(LAST_CHAT_ID, f"💭 [Impulso Proactivo]: {texto_proactivo}")
                 print("[BIOLOGÍA]: Impulso proactivo liberado orgánicamente hacia Telegram.")
             
