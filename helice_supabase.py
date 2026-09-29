@@ -104,7 +104,7 @@ async def generar_embedding(texto: str) -> List[float]:
 async def generar_gemini(prompt: str, temperature: float = 0.7, max_tokens: int = 500) -> str:
     try:
         response = client_genai.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model="gemini-3.5-flash-lite",
             contents=prompt,
             config=genai.types.GenerateContentConfig(
                 temperature=temperature,
