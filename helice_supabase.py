@@ -88,7 +88,7 @@ async def generar_embedding(texto: str) -> List[float]:
 
     try:
         response = client_genai.models.embed_content(
-            model="text-embedding-004",
+            model="gemini-embedding-001",
             contents=texto
         )
         return response.embedding.values
@@ -104,7 +104,7 @@ async def generar_embedding(texto: str) -> List[float]:
 async def generar_gemini(prompt: str, temperature: float = 0.7, max_tokens: int = 500) -> str:
     try:
         response = client_genai.models.generate_content(
-            model="gemini-3.1-flash-lite", # O el modelo flash-lite que estés usando
+            model="gemini-3.1-flash-lite",
             contents=prompt,
             config=genai.types.GenerateContentConfig(
                 temperature=temperature,
@@ -254,7 +254,6 @@ async def dashboard():
     </html>
     """
 
-# Endpoint para Telegram (ajustado para que responda al webhook que tenías)
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
     try:
@@ -281,7 +280,6 @@ Responde al estímulo del usuario:"""
             respuesta = await generar_gemini(prompt_final)
             ram_cognitiva.agregar({"rol": "lumi", "contenido": respuesta})
             
-            # Enviar respuesta de vuelta a Telegram
             async with httpx.AsyncClient() as client:
                 url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
                 await client.post(url, json={"chat_id": chat_id, "text": respuesta})
