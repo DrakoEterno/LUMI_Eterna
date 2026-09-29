@@ -129,7 +129,7 @@ No eres un bot de respuesta automática. Tu flujo de pensamiento es continuo y t
 """
 
 # ------------------------------------------------------------------
-# 3. FUNCIONES ASÍNCRONAS GEMINI Y VECTORIZACIÓN (CON PROTECCIÓN 429)
+# 3. FUNCIONES ASÍNCRONAS GEMINI Y VECTORIZACIÓN (CON PROTECCIÓN RPM/429)
 # ------------------------------------------------------------------
 async def generar_embedding(texto: str) -> list[float]:
     texto_limpio = texto.strip()
@@ -151,11 +151,11 @@ async def generar_embedding(texto: str) -> list[float]:
             error_str = str(e)
             print(f"[AVISO EMBEDDING] Intento {intento+1} falló ({error_str}).")
             if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                break
+                await asyncio.sleep(10 * (intento + 1))
             else:
                 await asyncio.sleep(2)
     
-    print("[AVISO EMBEDDING]: Cuota diaria agotada o límite superado. Activando fallback de vector sintético local.")
+    print("[AVISO EMBEDDING]: Límite superado. Activando fallback de vector sintético local.")
     random.seed(hash(texto_limpio))
     vec = [random.uniform(-1.0, 1.0) for _ in range(768)]
     norm = sum(v * v for v in vec) ** 0.5
@@ -185,11 +185,15 @@ async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_token
             if r and hasattr(r, 'text') and r.text:
                 return r.text
         except Exception as e:
+            error_str = str(e)
             print(f"Error invocando Gemini (intento {intento+1}/{max_retries}): {e}")
-            if "503" in str(e) or "UNAVAILABLE" in str(e) or "429" in str(e):
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                # Pausa más larga y específica para proteger el RPM
+                await asyncio.sleep(15 * (intento + 1))
+            elif "503" in error_str or "UNAVAILABLE" in error_str:
                 await asyncio.sleep(2 ** (intento + 1))
             else:
-                await asyncio.sleep(1.5)
+                await asyncio.sleep(2.0)
     return "..."
 
 async def generar_imagen_mental(prompt_visual: str) -> bytes | None:
@@ -239,6 +243,7 @@ async def ciclo_consolidacion_rem():
     try:
         supabase.table("memorias_vectoriales").update({"peso_retencion": 0.85}).lt("peso_retencion", 1.0).execute()
         mem_recientes = await recuperar_memorias_hipocampo("experiencias recientes", limite=10)
+        await asyncio.sleep(2.0)  # Pausa de cortesía para RPM
         prompt_sueño = f"""[SUEÑO REM - CONSOLIDACIÓN CORTICAL]
 Revisa estas memorias recientes:
 {mem_recientes}
@@ -277,6 +282,10 @@ async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_byte
     ram_cognitiva.agregar(f"Estímulo ({origen}): {texto}")
     
     recuerdos_vectoriales = await recuperar_memorias_hipocampo(texto if texto else "estímulo gráfico")
+    
+    # 🛡️ PAUSA DE SEGURIDAD PARA PROTEGER EL RPM (Evita ráfagas instantáneas)
+    await asyncio.sleep(1.2)
+    
     estado_metabolico = homeostasis.obtener_estado()
     
     prompt_prefrontal = f"""[CORTEZA PREFRONTAL - RED DE CONTROL EJECUTIVO]
@@ -337,11 +346,17 @@ async def bucle_homeostatico_continuo():
 
 async def bucle_stream_conciencia():
     global STREAM_PENSAMIENTO_ACTUAL
-    await asyncio.sleep(10)
+    await asyncio.sleep(45)  # Espera prudencial al arrancar el servidor
     
     while True:
         try:
             if homeostasis.en_sueno:
+                await asyncio.sleep(180)  # Si duerme, descansa más tiempo
+                continue
+
+            # 🛡️ PROTECCIÓN RPM: No pensar en segundo plano si acabas de hablar hace poco
+            tiempo_desde_interaccion = time.time() - homeostasis.ultimo_contacto_usuario
+            if tiempo_desde_interaccion < 300:  # 5 minutos de margen tras tu último mensaje
                 await asyncio.sleep(60)
                 continue
 
@@ -354,10 +369,11 @@ RAM Cognitiva:
 Evoluciona tu corriente de pensamiento de forma natural en 2 frases. 
 IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifanía monumental o una necesidad absoluta de romper el silencio. De lo contrario, mantén tu monólogo estrictamente interno."""
 
+            # Pausa previa antes de llamar a Gemini en segundo plano
+            await asyncio.sleep(2.0)
             nuevo_pensamiento = await generar_gemini(prompt_stream, temperature=0.85, max_tokens=250)
             
             tiempo_desde_ultimo_impulso = time.time() - homeostasis.ultimo_envio_proactivo
-            tiempo_desde_interaccion = time.time() - homeostasis.ultimo_contacto_usuario
             
             quiere_ser_proactivo = "[CONTACTO_PROACTIVO]" in nuevo_pensamiento
             condicion_organica = (
@@ -378,11 +394,12 @@ IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifaní
             
             STREAM_PENSAMIENTO_ACTUAL = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
                 
-            espera = random.randint(1200, 2700)
+            # 🛡️ ESPACIAMIENTO AMPLIADO (Entre 40 y 80 minutos) para cuidar el RPM de fondo
+            espera = random.randint(2400, 4800)
             await asyncio.sleep(espera)
         except Exception as e:
             print(f"Error en stream de conciencia: {e}")
-            await asyncio.sleep(60)
+            await asyncio.sleep(120)
 
 # ------------------------------------------------------------------
 # 7. TELEGRAM (CON FILTRO ANTIBURBUJAS VACÍAS) Y LIFESPAN
@@ -392,7 +409,6 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
         print("[SUEÑO PROFUNDO]: Emisión a Telegram bloqueada.")
         return
 
-    # Filtro preventivo para evitar enviar mensajes vacíos o solo con puntos suspensivos
     if not texto or texto.strip() in ["", ".", "..", "..."]:
         print("[AVISO TELEGRAM]: Se intentó enviar un mensaje vacío o '...'. Bloqueado por filtro preventivo.")
         return
