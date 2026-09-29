@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 client_genai = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
@@ -281,7 +281,7 @@ Responde al estímulo del usuario:"""
             ram_cognitiva.agregar({"rol": "lumi", "contenido": respuesta})
             
             async with httpx.AsyncClient() as client:
-                url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+                url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
                 await client.post(url, json={"chat_id": chat_id, "text": respuesta})
                 
         return {"status": "ok"}
