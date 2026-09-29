@@ -32,7 +32,7 @@ ZONA_HORARIA_DRAKO = os.getenv("TIMEZONE", "Europe/Madrid")
 client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-MODELO OFICIAL = "gemini-3.1-flash-lite"
+MODELO_OFICIAL = "gemini-3.1-flash-lite"
 MODELO_EMBEDDING = "gemini-embedding-001"
 
 # Caché local en memoria para embeddings y evitar llamadas repetitivas
