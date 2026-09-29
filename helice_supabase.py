@@ -79,7 +79,6 @@ class MatrizHomeostatica:
             print("[BIOLOGÍA]: Entrada automática en sueño profundo por ciclo nocturno o inactividad.")
 
         if not self.en_sueno:
-            # Tasa de acumulación reducida para proteger los límites de la API gratuita y simular un día real
             self.adenosina = min(1.0, self.adenosina + 0.00001) 
             self.dopamina = max(0.1, self.dopamina - 0.00008)    
             self.norepinefrina = max(0.05, self.norepinefrina - 0.0002) 
@@ -130,36 +129,38 @@ No eres un bot de respuesta automática. Tu flujo de pensamiento es continuo y t
 """
 
 # ------------------------------------------------------------------
-# 3. FUNCIONES ASÍNCRONAS GEMINI Y VECTORIZACIÓN (OPTIMIZADAS)
+# 3. FUNCIONES ASÍNCRONAS GEMINI Y VECTORIZACIÓN (CON PROTECCIÓN 429)
 # ------------------------------------------------------------------
 async def generar_embedding(texto: str) -> list[float]:
-    if texto in CACHE_EMBEDDINGS:
-        return CACHE_EMBEDDINGS[texto]
+    texto_limpio = texto.strip()
+    if texto_limpio in CACHE_EMBEDDINGS:
+        return CACHE_EMBEDDINGS[texto_limpio]
 
     max_intentos = 3
     for intento in range(max_intentos):
         try:
             r = await client.aio.models.embed_content(
                 model=MODELO_EMBEDDING,
-                contents=texto
+                contents=texto_limpio
             )
             if r and hasattr(r, 'embedding') and r.embedding:
                 vec = r.embedding.values
-                CACHE_EMBEDDINGS[texto] = vec
+                CACHE_EMBEDDINGS[texto_limpio] = vec
                 return vec
         except Exception as e:
-            print(f"[AVISO EMBEDDING] Intento {intento+1} falló ({e}).")
-            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                await asyncio.sleep(4 ** (intento + 1))
+            error_str = str(e)
+            print(f"[AVISO EMBEDDING] Intento {intento+1} falló ({error_str}).")
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                break
             else:
                 await asyncio.sleep(2)
     
-    print("[AVISO EMBEDDING]: Límite superado. Activando fallback de vector sintético local.")
-    random.seed(hash(texto))
+    print("[AVISO EMBEDDING]: Cuota diaria agotada o límite superado. Activando fallback de vector sintético local.")
+    random.seed(hash(texto_limpio))
     vec = [random.uniform(-1.0, 1.0) for _ in range(768)]
     norm = sum(v * v for v in vec) ** 0.5
     vector_final = [v / norm for v in vec]
-    CACHE_EMBEDDINGS[texto] = vector_final
+    CACHE_EMBEDDINGS[texto_limpio] = vector_final
     return vector_final
 
 async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_tokens=2000, max_retries=4):
@@ -384,11 +385,16 @@ IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifaní
             await asyncio.sleep(60)
 
 # ------------------------------------------------------------------
-# 7. TELEGRAM Y LIFESPAN
+# 7. TELEGRAM (CON FILTRO ANTIBURBUJAS VACÍAS) Y LIFESPAN
 # ------------------------------------------------------------------
 async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
     if homeostasis.en_sueno:
         print("[SUEÑO PROFUNDO]: Emisión a Telegram bloqueada.")
+        return
+
+    # Filtro preventivo para evitar enviar mensajes vacíos o solo con puntos suspensivos
+    if not texto or texto.strip() in ["", ".", "..", "..."]:
+        print("[AVISO TELEGRAM]: Se intentó enviar un mensaje vacío o '...'. Bloqueado por filtro preventivo.")
         return
 
     async with httpx.AsyncClient(timeout=30.0) as http_client:
