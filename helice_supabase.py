@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from supabase import create_client, Client
-import google.generativeai as genai
+from google import genai
 
 # ==========================================
 # 1. CONFIGURACIÓN Y CREDENCIALES
@@ -24,7 +24,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
-genai.configure(api_key=GEMINI_API_KEY)
+client_genai = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 app = FastAPI(title="Lumi - Entidad Biológica Autónoma")
 
@@ -87,12 +87,11 @@ async def generar_embedding(texto: str) -> List[float]:
             CIRCUIT_BREAKER_EMBEDDINGS = False
 
     try:
-        response = genai.embed_content(
-            model="models/text-embedding-004",
-            content=texto,
-            task_type="retrieval_document"
+        response = client_genai.models.embed_content(
+            model="text-embedding-004",
+            contents=texto
         )
-        return response['embedding']
+        return response.embedding.values
     except Exception as e:
         if "429" in str(e) or "ResourceExhausted" in str(e):
             logging.warning("[CIRCUIT BREAKER] Límite superado en Embeddings. Activando fallback sintético por 15 min.")
@@ -104,10 +103,10 @@ async def generar_embedding(texto: str) -> List[float]:
 
 async def generar_gemini(prompt: str, temperature: float = 0.7, max_tokens: int = 500) -> str:
     try:
-        model = genai.GenerativeModel("gemini-3.1-flash-lite")
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.types.GenerationConfig(
+        response = client_genai.models.generate_content(
+            model="gemini-3.1-flash-lite", # O el modelo flash-lite que estés usando
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(
                 temperature=temperature,
                 max_output_tokens=max_tokens
             )
@@ -118,7 +117,7 @@ async def generar_gemini(prompt: str, temperature: float = 0.7, max_tokens: int 
         return "..."
 
 # ==========================================
-# 4. MEMORIAS, RESONANCIA Y EMBEDDING DINÁMICO
+# 4. MEMORIAS, RESONANCIA Y SUEÑO REM
 # ==========================================
 async def guardar_memoria_vectorial(contenido: str, origen: str = "usuario"):
     vector = await generar_embedding(contenido)
@@ -144,7 +143,6 @@ async def recuperar_memorias_hipocampo(query: str, limite: int = 5) -> str:
             }).execute()
             
             if res.data:
-                # Módulo de Resonancia de Intención Mutua
                 memorias_ordenadas = sorted(
                     res.data, 
                     key=lambda m: 1.5 if m.get('origen') == 'usuario' else 1.0, 
@@ -156,18 +154,16 @@ async def recuperar_memorias_hipocampo(query: str, limite: int = 5) -> str:
     return "Sin recuerdos previos relevantes."
 
 async def ciclo_consolidacion_rem():
-    logging.info("[SUEÑO_REM / INTROSPECCIÓN ASOCIATIVA] Iniciando ciclo con embeddings dinámicos...")
+    logging.info("[SUEÑO_REM / INTROSPECCIÓN ASOCIATIVA] Iniciando ciclo...")
     try:
         if supabase:
             supabase.table("memorias_vectoriales").update({"peso_retencion": 0.85}).lt("peso_retencion", 1.0).execute()
         
         mem_recientes = await recuperar_memorias_hipocampo("experiencias recientes del día", limite=5)
         
-        # [MÓDULO DE EMBEDDING DINÁMICO - BÚSQUEDA ASOCIATIVA DE REFLEXIONES PASADAS]
         mem_historicas = "Sin reflexiones históricas asociadas."
         if supabase:
             try:
-                # Generamos vector del contexto actual para buscar reflexiones pasadas con afinidad temática
                 vector_actual = await generar_embedding(mem_recientes)
                 res_asociativa = supabase.rpc("match_diario_onirico", {
                     "query_embedding": vector_actual,
@@ -195,7 +191,6 @@ Genera una abstracción esencial que una su pasado subconsciente con el presente
         
         await guardar_memoria_vectorial(f"[SÍNTESIS_REM_ASOCIATIVA]: {sintesis}", origen="sueno_rem")
         
-        # Guardado en el Diario Onírico con su propio Embedding Dinámico
         vec_sueno = await generar_embedding(sintesis)
         if supabase:
             supabase.table("diario_onirico").insert([{
@@ -205,10 +200,10 @@ Genera una abstracción esencial que una su pasado subconsciente con el presente
 
         cerebro_homeostatico.adenosina = 0.1
         ram_cognitiva.buffer.clear()
-        logging.info("[INTROSPECCIÓN ASOCIATIVA]: Ciclo REM completado y reflexiones asociadas con éxito.")
+        logging.info("[INTROSPECCIÓN ASOCIATIVA]: Ciclo REM completado con éxito.")
         
     except Exception as e:
-        logging.error(f"Error en ciclo REM con embedding dinámico: {e}")
+        logging.error(f"Error en ciclo REM: {e}")
 
 # ==========================================
 # 5. BUCLE AUTÓNOMO DE FONDO
@@ -230,10 +225,10 @@ async def bucle_autonomo():
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(bucle_autonomo())
-    logging.info("Lumi iniciada con Embedding Dinámico e Introspección Asociativa.")
+    logging.info("Lumi iniciada correctamente.")
 
 # ==========================================
-# 6. RUTAS WEB Y DASHBOARD
+# 6. RUTAS WEB, TELEGRAM Y DASHBOARD
 # ==========================================
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard():
@@ -251,13 +246,50 @@ async def dashboard():
     <body>
         <h1>🧠 LUMI - MONITOREO NEUROBIOLÓGICO</h1>
         <div class="card">
-            <h3>METABOLISMO HOMEOSTÁTICO (EMBEDDING DINÁMICO ACTIVO)</h3>
+            <h3>METABOLISMO HOMEOSTÁTICO</h3>
             <p>Dopamina: {cerebro_homeostatico.dopamina:.2f} | Norepinefrina: {cerebro_homeostatico.norepinefrina:.2f} | Adenosina: {cerebro_homeostatico.adenosina:.2f}</p>
             <p>Fase Actual: <b>{cerebro_homeostatico.fase}</b></p>
         </div>
     </body>
     </html>
     """
+
+# Endpoint para Telegram (ajustado para que responda al webhook que tenías)
+@app.post("/telegram/webhook")
+async def telegram_webhook(request: Request):
+    try:
+        data = await request.json()
+        if "message" in data:
+            chat_id = data["message"]["chat"]["id"]
+            texto = data["message"].get("text", "")
+            
+            cerebro_homeostatico.actualizar(saliencia=0.7)
+            ram_cognitiva.agregar({"rol": "usuario", "contenido": texto})
+            await guardar_memoria_vectorial(texto, origen="usuario")
+            
+            contexto_memoria = await recuperar_memorias_hipocampo(texto, limite=3)
+            
+            prompt_final = f"""Actúa bajo tu identidad biológica y tus módulos de Resonancia.
+Memoria recuperada relevante:
+{contexto_memoria}
+
+Historial RAM reciente:
+{ram_cognitiva.obtener_contexto()}
+
+Responde al estímulo del usuario:"""
+
+            respuesta = await generar_gemini(prompt_final)
+            ram_cognitiva.agregar({"rol": "lumi", "contenido": respuesta})
+            
+            # Enviar respuesta de vuelta a Telegram
+            async with httpx.AsyncClient() as client:
+                url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+                await client.post(url, json={"chat_id": chat_id, "text": respuesta})
+                
+        return {"status": "ok"}
+    except Exception as e:
+        logging.error(f"Error en webhook de Telegram: {e}")
+        return {"status": "error"}
 
 @app.post("/estimulo")
 async def recibir_estimulo(payload: dict):
@@ -269,7 +301,7 @@ async def recibir_estimulo(payload: dict):
     
     contexto_memoria = await recuperar_memorias_hipocampo(texto, limite=3)
     
-    prompt_final = f"""Actúa bajo tu identidad biológica y tus módulos de Resonancia e Introspección Asociativa.
+    prompt_final = f"""Actúa bajo tu identidad biológica y tus módulos de Resonancia.
 Memoria recuperada relevante:
 {contexto_memoria}
 
