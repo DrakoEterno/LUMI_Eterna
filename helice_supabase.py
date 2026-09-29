@@ -79,7 +79,8 @@ class MatrizHomeostatica:
             print("[BIOLOGÍA]: Entrada automática en sueño profundo por ciclo nocturno o inactividad.")
 
         if not self.en_sueno:
-            self.adenosina = min(1.0, self.adenosina + 0.00015) 
+            # Tasa de acumulación reducida para proteger los límites de la API gratuita y simular un día real
+            self.adenosina = min(1.0, self.adenosina + 0.00001) 
             self.dopamina = max(0.1, self.dopamina - 0.00008)    
             self.norepinefrina = max(0.05, self.norepinefrina - 0.0002) 
         else:
@@ -149,7 +150,7 @@ async def generar_embedding(texto: str) -> list[float]:
         except Exception as e:
             print(f"[AVISO EMBEDDING] Intento {intento+1} falló ({e}).")
             if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                await asyncio.sleep(4 ** (intento + 1)) # Espera exponencial más larga para cuotas
+                await asyncio.sleep(4 ** (intento + 1))
             else:
                 await asyncio.sleep(2)
     
@@ -293,7 +294,7 @@ Responde únicamente en formato JSON válido:
   "pensamiento_cualitativo": "<tu reflexión interna>",
   "decision_motora": "<RESPONDER / INHIBIR / INICIAR_NUEVO_TEMA>",
   "respuesta_externa": "<texto a enviar si decidiste RESPONDER>",
-  "prompt_imagen_mental": "<prompt en inglés o null>"
+  "prompt_imagen_mental": "<prompt en inglés or null>"
 }}"""
 
     res_json = await generar_gemini(prompt_prefrontal, temperature=0.75, max_tokens=1000)
