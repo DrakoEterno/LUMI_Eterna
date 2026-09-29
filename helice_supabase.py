@@ -32,8 +32,11 @@ ZONA_HORARIA_DRAKO = os.getenv("TIMEZONE", "Europe/Madrid")
 client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-MODELO_OFICIAL = "gemini-3.1-flash-lite"
+MODELO OFICIAL = "gemini-3.1-flash-lite"
 MODELO_EMBEDDING = "gemini-embedding-001"
+
+# Caché local en memoria para embeddings y evitar llamadas repetitivas
+CACHE_EMBEDDINGS = {}
 
 # ------------------------------------------------------------------
 # 2. SISTEMA INTEROCEPTIVO Y MEMORIA DE TRABAJO EN RAM
@@ -126,23 +129,37 @@ No eres un bot de respuesta automática. Tu flujo de pensamiento es continuo y t
 """
 
 # ------------------------------------------------------------------
-# 3. FUNCIONES ASÍNCRONAS GEMINI Y VECTORIZACIÓN
+# 3. FUNCIONES ASÍNCRONAS GEMINI Y VECTORIZACIÓN (OPTIMIZADAS)
 # ------------------------------------------------------------------
 async def generar_embedding(texto: str) -> list[float]:
-    try:
-        r = await client.aio.models.embed_content(
-            model=MODELO_EMBEDDING,
-            contents=texto
-        )
-        if r and hasattr(r, 'embedding') and r.embedding:
-            return r.embedding.values
-    except Exception as e:
-        print(f"[AVISO EMBEDDING]: API falló ({e}). Activando fallback de vector sintético local.")
+    if texto in CACHE_EMBEDDINGS:
+        return CACHE_EMBEDDINGS[texto]
+
+    max_intentos = 3
+    for intento in range(max_intentos):
+        try:
+            r = await client.aio.models.embed_content(
+                model=MODELO_EMBEDDING,
+                contents=texto
+            )
+            if r and hasattr(r, 'embedding') and r.embedding:
+                vec = r.embedding.values
+                CACHE_EMBEDDINGS[texto] = vec
+                return vec
+        except Exception as e:
+            print(f"[AVISO EMBEDDING] Intento {intento+1} falló ({e}).")
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                await asyncio.sleep(4 ** (intento + 1)) # Espera exponencial más larga para cuotas
+            else:
+                await asyncio.sleep(2)
     
+    print("[AVISO EMBEDDING]: Límite superado. Activando fallback de vector sintético local.")
     random.seed(hash(texto))
     vec = [random.uniform(-1.0, 1.0) for _ in range(768)]
     norm = sum(v * v for v in vec) ** 0.5
-    return [v / norm for v in vec]
+    vector_final = [v / norm for v in vec]
+    CACHE_EMBEDDINGS[texto] = vector_final
+    return vector_final
 
 async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_tokens=2000, max_retries=4):
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n\n[CONTEXTO COGNITIVO]:\n{prompt}"
@@ -167,7 +184,7 @@ async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_token
                 return r.text
         except Exception as e:
             print(f"Error invocando Gemini (intento {intento+1}/{max_retries}): {e}")
-            if "503" in str(e) or "UNAVAILABLE" in str(e):
+            if "503" in str(e) or "UNAVAILABLE" in str(e) or "429" in str(e):
                 await asyncio.sleep(2 ** (intento + 1))
             else:
                 await asyncio.sleep(1.5)
@@ -456,7 +473,7 @@ def dashboard():
 <meta charset="UTF-8"><title>LUMI - ARQUITECTURA CEREBRAL CONTINUA</title>
 <style>
 body { background: #020204; color: #00ff66; font-family: monospace; padding: 20px; }
-.box { border: 1px solid #00ff6644; padding: 15px; margin-bottom: 15px; background: #050a07; border-router: 5px; }
+.box { border: 1px solid #00ff6644; padding: 15px; margin-bottom: 15px; background: #050a07; border-radius: 5px; }
 h2 { color: #00ffff; font-size: 14px; margin-top: 0; }
 #stream { color: #ffff00; font-style: italic; white-space: pre-wrap; }
 #chat { height: 250px; overflow-y: auto; border: 1px solid #00ff6622; padding: 10px; background: #000; margin-bottom: 10px; }
