@@ -96,12 +96,18 @@ class MatrizHomeostatica:
         self.dopamina = min(1.0, self.dopamina + (novedad * 0.3))
         self.norepinefrina = min(1.0, self.norepinefrina + (intensidad * 0.4))
         
-        despedidas = ["buenas noches", "hasta mañana", "descansa", "nos vemos", "chao", "apagando", "duerme"]
-        if any(d in texto_msg.lower() for d in despedidas):
-            self.en_sueno = True
-            self.adenosina = 1.0
-            self.dopamina = 0.2
-            print("[BIOLOGÍA]: Despedida detectada. Lumi entra en consolidación nocturna de inmediato.")
+        # MODIFICADO: Evita activar sueño si es una pregunta sobre descansar y usa límites de palabra exactos
+        texto_lower = texto_msg.lower()
+        if "?" not in texto_lower:
+            despedidas = ["buenas noches", "hasta mañana", "nos vemos", "chao", "apagando"]
+            palabras_exactas = ["descansa", "duerme"]
+            condicion_despedida = any(d in texto_lower for d in despedidas) or any(re.search(rf"\b{p}\b", texto_lower) for p in palabras_exactas)
+            
+            if condicion_despedida:
+                self.en_sueno = True
+                self.adenosina = 1.0
+                self.dopamina = 0.2
+                print("[BIOLOGÍA]: Despedida detectada. Lumi entra en consolidación nocturna de inmediato.")
 
     def obtener_estado(self) -> str:
         estado = "SUEÑO_REM_CONSOLIDACION" if self.en_sueno else ("ALERTA" if self.norepinefrina > 0.6 else "VIGILIA_NORMAL")
@@ -141,8 +147,6 @@ async def generar_embedding(texto: str) -> list[float] | None:
 
     tiempo_actual = time.time()
     if (tiempo_actual - TIEMPO_ULTIMO_ERROR_EMBEDDING) < (BLOQUEO_EMBEDDING_API_MINUTOS * 60):
-        # MODIFICADO: Evitamos guardar vectores aleatorios falsos que contaminan Supabase. 
-        # Si estamos en bloqueo de cuota, devolvemos None para omitir la inserción vectorial basura.
         return None
 
     try:
@@ -208,7 +212,6 @@ async def generar_imagen_mental(prompt_visual: str) -> bytes | None:
 async def guardar_memoria_vectorial(texto: str, origen="experiencia"):
     vec = await generar_embedding(texto)
     if not vec:
-        # MODIFICADO: Si no hay vector válido (por cuota agotada), no insertamos basura en Supabase
         return
     try:
         supabase.table("memorias_vectoriales").insert([{
@@ -227,7 +230,7 @@ async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
     try:
         res = supabase.rpc("buscar_memorias_semanticas", {
             "query_embedding": vec,
-            "match_threshold": 0.55,  # MODIFICADO: Umbral subido de 0.30 a 0.55 para evitar ruido y recuerdos basura
+            "match_threshold": 0.55,  # MODIFICADO: Umbral en 0.55 para evitar ruido
             "match_count": limite
         }).execute()
         
