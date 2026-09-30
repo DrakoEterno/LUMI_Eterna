@@ -45,7 +45,7 @@ BLOQUEO_EMBEDDING_API_MINUTOS = 15
 # ------------------------------------------------------------------
 class RAMCognitiva:
     """Buffer de Memoria de Trabajo volátil (RAM cerebral)."""
-    def __init__(self, capacidad=7):
+    def __init__(self, capacidad=11):  # MODIFICADO: Capacidad aumentada de 7 a 11 para mejor fluidez de contexto
         self.capacidad = capacidad
         self.buffer = []
 
@@ -133,7 +133,7 @@ No eres un bot de respuesta automática. Tu flujo de pensamiento es continuo y t
 # ------------------------------------------------------------------
 # 3. FUNCIONES ASÍNCRONAS Y PROTECCIÓN BIOLÓGICA CONTRA 429
 # ------------------------------------------------------------------
-async def generar_embedding(texto: str) -> list[float]:
+async def generar_embedding(texto: str) -> list[float] | None:
     global TIEMPO_ULTIMO_ERROR_EMBEDDING
     texto_limpio = texto.strip()
     if texto_limpio in CACHE_EMBEDDINGS:
@@ -141,12 +141,9 @@ async def generar_embedding(texto: str) -> list[float]:
 
     tiempo_actual = time.time()
     if (tiempo_actual - TIEMPO_ULTIMO_ERROR_EMBEDDING) < (BLOQUEO_EMBEDDING_API_MINUTOS * 60):
-        random.seed(hash(texto_limpio))
-        vec = [random.uniform(-1.0, 1.0) for _ in range(768)]
-        norm = sum(v * v for v in vec) ** 0.5
-        vector_final = [v / norm for v in vec]
-        CACHE_EMBEDDINGS[texto_limpio] = vector_final
-        return vector_final
+        # MODIFICADO: Evitamos guardar vectores aleatorios falsos que contaminan Supabase. 
+        # Si estamos en bloqueo de cuota, devolvemos None para omitir la inserción vectorial basura.
+        return None
 
     try:
         r = await client.aio.models.embed_content(
@@ -161,16 +158,11 @@ async def generar_embedding(texto: str) -> list[float]:
         error_str = str(e)
         if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
             TIEMPO_ULTIMO_ERROR_EMBEDDING = time.time()
-            print(f"[METABOLISMO]: Límite de embeddings alcanzado. Activando modo sintético local por {BLOQUEO_EMBEDDING_API_MINUTOS} min.")
+            print(f"[METABOLISMO]: Límite de embeddings alcanzado. Pausando inserciones vectoriales por {BLOQUEO_EMBEDDING_API_MINUTOS} min.")
         else:
             print(f"[AVISO EMBEDDING]: {error_str}")
 
-    random.seed(hash(texto_limpio))
-    vec = [random.uniform(-1.0, 1.0) for _ in range(768)]
-    norm = sum(v * v for v in vec) ** 0.5
-    vector_final = [v / norm for v in vec]
-    CACHE_EMBEDDINGS[texto_limpio] = vector_final
-    return vector_final
+    return None
 
 async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_tokens=2000, max_retries=3):
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n\n[CONTEXTO COGNITIVO]:\n{prompt}"
@@ -215,6 +207,9 @@ async def generar_imagen_mental(prompt_visual: str) -> bytes | None:
 # ------------------------------------------------------------------
 async def guardar_memoria_vectorial(texto: str, origen="experiencia"):
     vec = await generar_embedding(texto)
+    if not vec:
+        # MODIFICADO: Si no hay vector válido (por cuota agotada), no insertamos basura en Supabase
+        return
     try:
         supabase.table("memorias_vectoriales").insert([{
             "contenido": texto,
@@ -227,10 +222,12 @@ async def guardar_memoria_vectorial(texto: str, origen="experiencia"):
 
 async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
     vec = await generar_embedding(estimulo)
+    if not vec:
+        return "Sin recuerdos semánticos asociados (modo protección metabólica activo)."
     try:
         res = supabase.rpc("buscar_memorias_semanticas", {
             "query_embedding": vec,
-            "match_threshold": 0.30,
+            "match_threshold": 0.55,  # MODIFICADO: Umbral subido de 0.30 a 0.55 para evitar ruido y recuerdos basura
             "match_count": limite
         }).execute()
         
