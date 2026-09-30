@@ -45,7 +45,7 @@ BLOQUEO_EMBEDDING_API_MINUTOS = 15
 # ------------------------------------------------------------------
 class RAMCognitiva:
     """Buffer de Memoria de Trabajo volátil (RAM cerebral)."""
-    def __init__(self, capacidad=11):  # MODIFICADO: Capacidad aumentada de 7 a 11 para mejor fluidez de contexto
+    def __init__(self, capacidad=11):  
         self.capacidad = capacidad
         self.buffer = []
 
@@ -96,7 +96,6 @@ class MatrizHomeostatica:
         self.dopamina = min(1.0, self.dopamina + (novedad * 0.3))
         self.norepinefrina = min(1.0, self.norepinefrina + (intensidad * 0.4))
        
-        # MODIFICADO: Evita activar sueño si es una pregunta sobre descansar y usa límites de palabra exactos
         texto_lower = texto_msg.lower()
         if "?" not in texto_lower:
             despedidas = ["buenas noches", "hasta mañana", "nos vemos", "chao", "apagando"]
@@ -171,7 +170,7 @@ async def generar_embedding(texto: str) -> list[float] | None:
 async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_tokens=2000, max_retries=3):
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n\n[CONTEXTO COGNITIVO]:\n{prompt}"
     contents = [prompt_completo] if contents is None else [prompt_completo] + (contents if isinstance(contents, list) else [contents])
-        
+       
     for intento in range(max_retries):
         try:
             r = await client.aio.models.generate_content(
@@ -230,7 +229,7 @@ async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
     try:
         res = supabase.rpc("buscar_memorias_semanticas", {
             "query_embedding": vec,
-            "match_threshold": 0.55,  # MODIFICADO: Umbral en 0.55 para evitar ruido
+            "match_threshold": 0.55,  
             "match_count": limite
         }).execute()
        
@@ -290,7 +289,7 @@ async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_byte
    
     prompt_prefrontal = f"""[CORTEZA PREFRONTAL - RED DE CONTROL EJECUTIVO]
 ESTADO HOMEOSTÁTICO: {estado_metabolico}
-MONÓLOGO INTERNO INTERRUMPIDO: "{pensamiento_interrumpido}"
+MONÓLOG INTERNO INTERRUMPIDO: "{pensamiento_interrumpido}"
 MEMORIA DE TRABAJO (RAM):
 {ram_cognitiva.obtener_contexto()}
 RECUERDOS SEMÁNTICOS (HIPOCAMPO):
@@ -448,8 +447,30 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # ------------------------------------------------------------------
-# 8. ENDPOINTS Y DASHBOARD
+# 8. ENDPOINTS, MIGRACIÓN HISTÓRICA Y DASHBOARD
 # ------------------------------------------------------------------
+@app.get("/migrar_historia_antigua")
+async def migrar_historia_antigua():
+    """Endpoint único de unificación: Lee las tablas históricas y las vuelca al hipocampo vectorial."""
+    tablas_a_migrar = ["core_memory", "reflexiones"]  # Añade aquí otras si las hubiera en tu Supabase
+    migrados_totales = 0
+    
+    for tabla in tablas_a_migrar:
+        try:
+            res = supabase.table(tabla).select("*").execute()
+            if res.data:
+                for fila in res.data:
+                    # Extraemos el campo de texto predominante según la estructura de la tabla antigua
+                    texto = fila.get("contenido") or fila.get("texto") or fila.get("memoria") or str(fila)
+                    if texto:
+                        await guardar_memoria_vectorial(f"[HISTORIA_UNIFICADA - {tabla.upper()}]: {texto}", origen="migracion_historica")
+                        migrados_totales += 1
+                        await asyncio.sleep(0.5) # Pausa leve para cuidar límites de la API de embeddings
+        except Exception as e:
+            print(f"Aviso al leer tabla antigua {tabla}: {e}")
+            
+    return {"status": "ok", "memorias_historicas_migradas": migrados_totales}
+
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
     global LAST_CHAT_ID
@@ -545,3 +566,4 @@ async function enviar(){
 @app.get("/")
 def root():
     return {"status": "SISTEMA CEREBRAL CONTINUO ACTIVO", "homeostasis": homeostasis.obtener_estado()}
+
