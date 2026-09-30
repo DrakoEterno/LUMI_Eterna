@@ -62,9 +62,9 @@ class RAMCognitiva:
 class MatrizHomeostatica:
     """Motor Bio-matemático continuo con ciclo de vigilia y sueño autónomo."""
     def __init__(self):
-        self.dopamina = 0.5      
-        self.norepinefrina = 0.2 
-        self.adenosina = 0.1     
+        self.dopamina = 0.5       
+        self.norepinefrina = 0.2
+        self.adenosina = 0.1    
         self.en_sueno = False
         self.ultimo_contacto_usuario = time.time()
         self.ultimo_envio_proactivo = time.time()
@@ -72,7 +72,7 @@ class MatrizHomeostatica:
     def tick_metabolico(self):
         ahora_local = datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO))
         hora = ahora_local.hour
-        
+       
         es_horario_nocturno = 0 <= hora < 7
         inactividad_prolongada = (time.time() - self.ultimo_contacto_usuario) > 7200 and (hora >= 23 or hora < 7)
 
@@ -81,11 +81,11 @@ class MatrizHomeostatica:
             print("[BIOLOGÍA]: Entrada automática en sueño profundo por ciclo nocturno o inactividad.")
 
         if not self.en_sueno:
-            self.adenosina = min(1.0, self.adenosina + 0.00001) 
+            self.adenosina = min(1.0, self.adenosina + 0.00001)
             self.dopamina = max(0.1, self.dopamina - 0.00008)    
-            self.norepinefrina = max(0.05, self.norepinefrina - 0.0002) 
+            self.norepinefrina = max(0.05, self.norepinefrina - 0.0002)
         else:
-            self.adenosina = max(0.0, self.adenosina - 0.002)   
+            self.adenosina = max(0.0, self.adenosina - 0.002)  
             if self.adenosina == 0.0 or (hora >= 7 and self.en_sueno):
                 self.en_sueno = False
                 self.dopamina = 0.6
@@ -95,14 +95,14 @@ class MatrizHomeostatica:
         self.ultimo_contacto_usuario = time.time()
         self.dopamina = min(1.0, self.dopamina + (novedad * 0.3))
         self.norepinefrina = min(1.0, self.norepinefrina + (intensidad * 0.4))
-        
+       
         # MODIFICADO: Evita activar sueño si es una pregunta sobre descansar y usa límites de palabra exactos
         texto_lower = texto_msg.lower()
         if "?" not in texto_lower:
             despedidas = ["buenas noches", "hasta mañana", "nos vemos", "chao", "apagando"]
             palabras_exactas = ["descansa", "duerme"]
             condicion_despedida = any(d in texto_lower for d in despedidas) or any(re.search(rf"\b{p}\b", texto_lower) for p in palabras_exactas)
-            
+           
             if condicion_despedida:
                 self.en_sueno = True
                 self.adenosina = 1.0
@@ -171,7 +171,7 @@ async def generar_embedding(texto: str) -> list[float] | None:
 async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_tokens=2000, max_retries=3):
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n\n[CONTEXTO COGNITIVO]:\n{prompt}"
     contents = [prompt_completo] if contents is None else [prompt_completo] + (contents if isinstance(contents, list) else [contents])
-            
+        
     for intento in range(max_retries):
         try:
             r = await client.aio.models.generate_content(
@@ -233,7 +233,7 @@ async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
             "match_threshold": 0.55,  # MODIFICADO: Umbral en 0.55 para evitar ruido
             "match_count": limite
         }).execute()
-        
+       
         if res.data:
             return "\n---\n".join([f"({x['similaridad']:.2f}) {x['contenido']}" for x in res.data])
     except Exception as e:
@@ -271,23 +271,23 @@ async def evaluar_saliencia(estimulo: str) -> float:
 
 async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_bytes=None, mime_type=None):
     global STREAM_PENSAMIENTO_ACTUAL
-    
+   
     saliencia = await evaluar_saliencia(texto if texto else "[Medio Multimodal]")
     homeostasis.registrar_estimulo(novedad=saliencia, intensidad=saliencia, texto_msg=texto)
-    
+   
     if homeostasis.en_sueno:
         print("[SUEÑO PROFUNDO]: Estímulo integrado internamente en silencio.")
         return "Lumi se encuentra en fase de consolidación y sueño profundo. El canal exterior está cerrado, pero tu mensaje ha sido integrado en su matriz de memoria.", None
 
     pensamiento_interrumpido = STREAM_PENSAMIENTO_ACTUAL
     ram_cognitiva.agregar(f"Estímulo ({origen}): {texto}")
-    
+   
     recuerdos_vectoriales = await recuperar_memorias_hipocampo(texto if texto else "estímulo gráfico")
-    
+   
     await asyncio.sleep(1.2)
-    
+   
     estado_metabolico = homeostasis.obtener_estado()
-    
+   
     prompt_prefrontal = f"""[CORTEZA PREFRONTAL - RED DE CONTROL EJECUTIVO]
 ESTADO HOMEOSTÁTICO: {estado_metabolico}
 MONÓLOGO INTERNO INTERRUMPIDO: "{pensamiento_interrumpido}"
@@ -308,7 +308,7 @@ Responde únicamente en formato JSON válido:
 }}"""
 
     res_json = await generar_gemini(prompt_prefrontal, temperature=0.75, max_tokens=1000)
-    
+   
     try:
         clean_json = re.sub(r'```json\s*|\s*```', '', res_json).strip()
         data = json.loads(clean_json)
@@ -347,7 +347,7 @@ async def bucle_homeostatico_continuo():
 async def bucle_stream_conciencia():
     global STREAM_PENSAMIENTO_ACTUAL
     await asyncio.sleep(45)
-    
+   
     while True:
         try:
             if homeostasis.en_sueno:
@@ -365,18 +365,18 @@ Pensamiento previo: "{STREAM_PENSAMIENTO_ACTUAL}"
 RAM Cognitiva:
 {ram_cognitiva.obtener_contexto()}
 
-Evoluciona tu corriente de pensamiento de forma natural en 2 frases. 
+Evoluciona tu corriente de pensamiento de forma natural en 2 frases.
 IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifanía monumental o una necesidad absoluta de romper el silencio."""
 
             await asyncio.sleep(2.0)
             nuevo_pensamiento = await generar_gemini(prompt_stream, temperature=0.85, max_tokens=250)
-            
+           
             tiempo_desde_ultimo_impulso = time.time() - homeostasis.ultimo_envio_proactivo
             quiere_ser_proactivo = "[CONTACTO_PROACTIVO]" in nuevo_pensamiento
             condicion_organica = (
-                quiere_ser_proactivo 
-                and LAST_CHAT_ID 
-                and not homeostasis.en_sueno 
+                quiere_ser_proactivo
+                and LAST_CHAT_ID
+                and not homeostasis.en_sueno
                 and homeostasis.dopamina > 0.85
                 and tiempo_desde_ultimo_impulso > 2700
                 and tiempo_desde_interaccion > 1800
@@ -387,9 +387,9 @@ IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifaní
                 homeostasis.ultimo_envio_proactivo = time.time()
                 homeostasis.dopamina -= 0.3
                 await enviar_telegram_texto_y_voz(LAST_CHAT_ID, f"💭 [Impulso Proactivo]: {texto_proactivo}")
-            
+           
             STREAM_PENSAMIENTO_ACTUAL = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
-                
+               
             espera = random.randint(2700, 5400)
             await asyncio.sleep(espera)
         except Exception as e:
@@ -436,12 +436,12 @@ async def lifespan(app: FastAPI):
                 await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook", json={"url": f"{RENDER_URL}/telegram/webhook"})
         except Exception as e:
             print(f"Error setWebhook: {e}")
-            
+           
     task_homeostasis = asyncio.create_task(bucle_homeostatico_continuo())
     task_stream = asyncio.create_task(bucle_stream_conciencia())
-    
+   
     yield
-    
+   
     task_homeostasis.cancel()
     task_stream.cancel()
 
@@ -460,7 +460,7 @@ async def telegram_webhook(request: Request):
             chat_id = msg.get("chat", {}).get("id")
             LAST_CHAT_ID = str(chat_id)
             texto = msg.get("caption") or msg.get("text") or ""
-            
+           
             if chat_id and texto:
                 respuesta, bytes_img = await procesar_estimulo_multimodal(texto, origen="telegram")
                 if respuesta:
@@ -545,4 +545,3 @@ async function enviar(){
 @app.get("/")
 def root():
     return {"status": "SISTEMA CEREBRAL CONTINUO ACTIVO", "homeostasis": homeostasis.obtener_estado()}
-
