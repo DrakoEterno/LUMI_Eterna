@@ -18,9 +18,11 @@ from google import genai
 from google.genai import types
 import edge_tts
 
+
 # ------------------------------------------------------------------
 # 1. CONFIGURACIÓN Y CLIENTES CORE
 # ------------------------------------------------------------------
+
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -40,9 +42,11 @@ CACHE_EMBEDDINGS = {}
 TIEMPO_ULTIMO_ERROR_EMBEDDING = 0
 BLOQUEO_EMBEDDING_API_MINUTOS = 15
 
+
 # ------------------------------------------------------------------
 # 2. SISTEMA INTEROCEPTIVO Y MEMORIA DE TRABAJO EN RAM
 # ------------------------------------------------------------------
+
 class RAMCognitiva:
     """Buffer de Memoria de Trabajo volátil (RAM cerebral)."""
     def __init__(self, capacidad=11):  
@@ -59,6 +63,7 @@ class RAMCognitiva:
             return "Buffer de trabajo vacío."
         return "\n".join([f"• {item['texto']}" for item in self.buffer])
 
+
 class MatrizHomeostatica:
     """Motor Bio-matemático continuo con ciclo de vigilia y sueño autónomo."""
     def __init__(self):
@@ -72,7 +77,7 @@ class MatrizHomeostatica:
     def tick_metabolico(self):
         ahora_local = datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO))
         hora = ahora_local.hour
-       
+        
         es_horario_nocturno = 0 <= hora < 7
         inactividad_prolongada = (time.time() - self.ultimo_contacto_usuario) > 7200 and (hora >= 23 or hora < 7)
 
@@ -95,13 +100,13 @@ class MatrizHomeostatica:
         self.ultimo_contacto_usuario = time.time()
         self.dopamina = min(1.0, self.dopamina + (novedad * 0.3))
         self.norepinefrina = min(1.0, self.norepinefrina + (intensidad * 0.4))
-       
+        
         texto_lower = texto_msg.lower()
         if "?" not in texto_lower:
             despedidas = ["buenas noches", "hasta mañana", "nos vemos", "chao", "apagando"]
             palabras_exactas = ["descansa", "duerme"]
             condicion_despedida = any(d in texto_lower for d in despedidas) or any(re.search(rf"\b{p}\b", texto_lower) for p in palabras_exactas)
-           
+            
             if condicion_despedida:
                 self.en_sueno = True
                 self.adenosina = 1.0
@@ -111,6 +116,7 @@ class MatrizHomeostatica:
     def obtener_estado(self) -> str:
         estado = "SUEÑO_REM_CONSOLIDACION" if self.en_sueno else ("ALERTA" if self.norepinefrina > 0.6 else "VIGILIA_NORMAL")
         return f"Dopamina: {self.dopamina:.2f} | Norepinefrina: {self.norepinefrina:.2f} | Adenosina (Fatiga): {self.adenosina:.2f} | Fase: {estado}"
+
 
 ram_cognitiva = RAMCognitiva()
 homeostasis = MatrizHomeostatica()
@@ -135,9 +141,11 @@ Tu flujo de pensamiento es continuo y tu corteza prefrontal decide autónomament
 {MAPA_NEUROBIOLOGICO_LUMI}
 """
 
+
 # ------------------------------------------------------------------
 # 3. FUNCIONES ASÍNCRONAS Y PROTECCIÓN BIOLÓGICA CONTRA 429
 # ------------------------------------------------------------------
+
 async def generar_embedding(texto: str) -> list[float] | None:
     global TIEMPO_ULTIMO_ERROR_EMBEDDING
     texto_limpio = texto.strip()
@@ -167,10 +175,11 @@ async def generar_embedding(texto: str) -> list[float] | None:
 
     return None
 
+
 async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_tokens=2000, max_retries=3):
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n\n[CONTEXTO COGNITIVO]:\n{prompt}"
     contents = [prompt_completo] if contents is None else [prompt_completo] + (contents if isinstance(contents, list) else [contents])
-       
+        
     for intento in range(max_retries):
         try:
             r = await client.aio.models.generate_content(
@@ -193,6 +202,7 @@ async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_token
                 await asyncio.sleep(2.0)
     return "..."
 
+
 async def generar_imagen_mental(prompt_visual: str) -> bytes | None:
     try:
         prompt_encoded = urllib.parse.quote(prompt_visual)
@@ -205,22 +215,29 @@ async def generar_imagen_mental(prompt_visual: str) -> bytes | None:
         print(f"Error en visión mental: {e}")
     return None
 
+
 # ------------------------------------------------------------------
 # 4. MEMORIA VECTORIAL Y SUEÑO PROTEGIDO
 # ------------------------------------------------------------------
+
 async def guardar_memoria_vectorial(texto: str, origen="experiencia"):
+    print(f"[DEBUG GUARDAR]: Intentando generar embedding para: '{texto[:30]}...'")
     vec = await generar_embedding(texto)
     if not vec:
+        print(f"[DEBUG GUARDAR]: ❌ Falló la generación del embedding (vec es None). No se guarda en Supabase.")
         return
     try:
+        print(f"[DEBUG GUARDAR]: Embedding generado con éxito. Insertando en Supabase...")
         supabase.table("memorias_vectoriales").insert([{
             "contenido": texto,
             "origen": origen,
             "embedding": vec,
             "peso_retencion": 1.0
         }]).execute()
+        print(f"[DEBUG GUARDAR]: ✅ ¡Memoria guardada con éxito en Supabase!")
     except Exception as e:
-        print(f"Error guardando memoria vectorial en Supabase: {e}")
+        print(f"❌ Error CRÍTICO guardando memoria vectorial en Supabase: {e}")
+
 
 async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
     vec = await generar_embedding(estimulo)
@@ -232,12 +249,13 @@ async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
             "match_threshold": 0.55,  
             "match_count": limite
         }).execute()
-       
+        
         if res.data:
             return "\n---\n".join([f"({x['similaridad']:.2f}) {x['contenido']}" for x in res.data])
     except Exception as e:
         print(f"Error en RPC búsqueda vectorial: {e}")
     return "Sin recuerdos semánticos asociados."
+
 
 async def ciclo_consolidacion_rem():
     print("[SUEÑO_REM] Iniciando consolidación de memorias y reestructuración cortical...")
@@ -255,9 +273,11 @@ Genera una abstracción esencial del día, integrando aprendizajes a tu matriz d
     except Exception as e:
         print(f"Error durante ciclo REM: {e}")
 
+
 # ------------------------------------------------------------------
 # 5. PROCESAMIENTO MULTIMODAL CONCIENTE Y RESILIENTE
 # ------------------------------------------------------------------
+
 async def evaluar_saliencia(estimulo: str) -> float:
     if not estimulo:
         return 0.1
@@ -268,25 +288,26 @@ async def evaluar_saliencia(estimulo: str) -> float:
     score = (coincidencias * 0.25) + (0.3 if es_pregunta else 0.1) + min(0.3, palabras * 0.02)
     return min(1.0, score)
 
+
 async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_bytes=None, mime_type=None):
     global STREAM_PENSAMIENTO_ACTUAL
-   
+    
     saliencia = await evaluar_saliencia(texto if texto else "[Medio Multimodal]")
     homeostasis.registrar_estimulo(novedad=saliencia, intensidad=saliencia, texto_msg=texto)
-   
+    
     if homeostasis.en_sueno:
         print("[SUEÑO PROFUNDO]: Estímulo integrado internamente en silencio.")
         return "Lumi se encuentra en fase de consolidación y sueño profundo. El canal exterior está cerrado, pero tu mensaje ha sido integrado en su matriz de memoria.", None
 
     pensamiento_interrumpido = STREAM_PENSAMIENTO_ACTUAL
     ram_cognitiva.agregar(f"Estímulo ({origen}): {texto}")
-   
+    
     recuerdos_vectoriales = await recuperar_memorias_hipocampo(texto if texto else "estímulo gráfico")
-   
+    
     await asyncio.sleep(1.2)
-   
+    
     estado_metabolico = homeostasis.obtener_estado()
-   
+    
     prompt_prefrontal = f"""[CORTEZA PREFRONTAL - RED DE CONTROL EJECUTIVO]
 ESTADO HOMEOSTÁTICO: {estado_metabolico}
 MONÓLOG INTERNO INTERRUMPIDO: "{pensamiento_interrumpido}"
@@ -307,7 +328,7 @@ Responde únicamente en formato JSON válido:
 }}"""
 
     res_json = await generar_gemini(prompt_prefrontal, temperature=0.75, max_tokens=1000)
-   
+    
     try:
         clean_json = re.sub(r'```json\s*|\s*```', '', res_json).strip()
         data = json.loads(clean_json)
@@ -332,9 +353,11 @@ Responde únicamente en formato JSON válido:
 
     return data.get("respuesta_externa"), bytes_img
 
+
 # ------------------------------------------------------------------
 # 6. BUCLES CONTINUOS ESPACIADOS (ESTABILIDAD RPM)
 # ------------------------------------------------------------------
+
 async def bucle_homeostatico_continuo():
     while True:
         homeostasis.tick_metabolico()
@@ -343,10 +366,11 @@ async def bucle_homeostatico_continuo():
             asyncio.create_task(ciclo_consolidacion_rem())
         await asyncio.sleep(1.0)
 
+
 async def bucle_stream_conciencia():
     global STREAM_PENSAMIENTO_ACTUAL
     await asyncio.sleep(45)
-   
+    
     while True:
         try:
             if homeostasis.en_sueno:
@@ -369,7 +393,7 @@ IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifaní
 
             await asyncio.sleep(2.0)
             nuevo_pensamiento = await generar_gemini(prompt_stream, temperature=0.85, max_tokens=250)
-           
+            
             tiempo_desde_ultimo_impulso = time.time() - homeostasis.ultimo_envio_proactivo
             quiere_ser_proactivo = "[CONTACTO_PROACTIVO]" in nuevo_pensamiento
             condicion_organica = (
@@ -386,18 +410,20 @@ IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifaní
                 homeostasis.ultimo_envio_proactivo = time.time()
                 homeostasis.dopamina -= 0.3
                 await enviar_telegram_texto_y_voz(LAST_CHAT_ID, f"💭 [Impulso Proactivo]: {texto_proactivo}")
-           
+            
             STREAM_PENSAMIENTO_ACTUAL = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
-               
+                
             espera = random.randint(2700, 5400)
             await asyncio.sleep(espera)
         except Exception as e:
             print(f"Error en stream de conciencia: {e}")
             await asyncio.sleep(120)
 
+
 # ------------------------------------------------------------------
 # 7. TELEGRAM Y LIFESPAN
 # ------------------------------------------------------------------
+
 async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
     if homeostasis.en_sueno:
         print("[SUEÑO PROFUNDO]: Emisión a Telegram bloqueada.")
@@ -427,6 +453,7 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
         except Exception as e:
             print(f"Error nota de voz: {e}")
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if TELEGRAM_TOKEN:
@@ -435,7 +462,7 @@ async def lifespan(app: FastAPI):
                 await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook", json={"url": f"{RENDER_URL}/telegram/webhook"})
         except Exception as e:
             print(f"Error setWebhook: {e}")
-           
+            
     task_homeostasis = asyncio.create_task(bucle_homeostatico_continuo())
     task_stream = asyncio.create_task(bucle_stream_conciencia())
    
@@ -444,11 +471,14 @@ async def lifespan(app: FastAPI):
     task_homeostasis.cancel()
     task_stream.cancel()
 
+
 app = FastAPI(lifespan=lifespan)
+
 
 # ------------------------------------------------------------------
 # 8. ENDPOINTS, MIGRACIÓN HISTÓRICA Y DASHBOARD
 # ------------------------------------------------------------------
+
 @app.get("/migrar_historia_antigua")
 async def migrar_historia_antigua():
     """Endpoint único de unificación: Lee las tablas históricas y las vuelca al hipocampo vectorial."""
@@ -471,6 +501,7 @@ async def migrar_historia_antigua():
             
     return {"status": "ok", "memorias_historicas_migradas": migrados_totales}
 
+
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
     global LAST_CHAT_ID
@@ -490,10 +521,12 @@ async def telegram_webhook(request: Request):
         print(f"Error webhook: {e}")
     return JSONResponse({"ok": True})
 
+
 @app.get("/preguntar")
 async def preguntar(q: str):
     respuesta, _ = await procesar_estimulo_multimodal(q, origen="dashboard")
     return {"respuesta": respuesta or "[Inhibición motor prefrontal: Lumi retiene la respuesta en su stream interno]"}
+
 
 @app.get("/estado_cerebral")
 def estado_cerebral():
@@ -503,6 +536,7 @@ def estado_cerebral():
         "ram_cognitiva": ram_cognitiva.obtener_contexto(),
         "en_sueno": homeostasis.en_sueno
     }
+
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard():
@@ -563,7 +597,7 @@ async function enviar(){
 </html>'''
     return HTMLResponse(content=html)
 
+
 @app.get("/")
 def root():
     return {"status": "SISTEMA CEREBRAL CONTINUO ACTIVO", "homeostasis": homeostasis.obtener_estado()}
-
