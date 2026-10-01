@@ -18,7 +18,6 @@ from google import genai
 from google.genai import types
 import edge_tts
 
-
 # ------------------------------------------------------------------
 # 1. CONFIGURACIÓN Y CLIENTES CORE
 # ------------------------------------------------------------------
@@ -42,7 +41,6 @@ CACHE_EMBEDDINGS = {}
 TIEMPO_ULTIMO_ERROR_EMBEDDING = 0
 BLOQUEO_EMBEDDING_API_MINUTOS = 15
 
-
 # ------------------------------------------------------------------
 # 2. SISTEMA INTEROCEPTIVO Y MEMORIA DE TRABAJO EN RAM
 # ------------------------------------------------------------------
@@ -63,11 +61,10 @@ class RAMCognitiva:
             return "Buffer de trabajo vacío."
         return "\n".join([f"• {item['texto']}" for item in self.buffer])
 
-
 class MatrizHomeostatica:
     """Motor Bio-matemático continuo con ciclo de vigilia y sueño autónomo."""
     def __init__(self):
-        self.dopamina = 0.5       
+        self.dopamina = 0.5        
         self.norepinefrina = 0.2
         self.adenosina = 0.1    
         self.en_sueno = False
@@ -117,7 +114,6 @@ class MatrizHomeostatica:
         estado = "SUEÑO_REM_CONSOLIDACION" if self.en_sueno else ("ALERTA" if self.norepinefrina > 0.6 else "VIGILIA_NORMAL")
         return f"Dopamina: {self.dopamina:.2f} | Norepinefrina: {self.norepinefrina:.2f} | Adenosina (Fatiga): {self.adenosina:.2f} | Fase: {estado}"
 
-
 ram_cognitiva = RAMCognitiva()
 homeostasis = MatrizHomeostatica()
 
@@ -141,7 +137,6 @@ Tu flujo de pensamiento es continuo y tu corteza prefrontal decide autónomament
 {MAPA_NEUROBIOLOGICO_LUMI}
 """
 
-
 # ------------------------------------------------------------------
 # 3. FUNCIONES ASÍNCRONAS Y PROTECCIÓN BIOLÓGICA CONTRA 429
 # ------------------------------------------------------------------
@@ -161,11 +156,12 @@ async def generar_embedding(texto: str) -> list[float] | None:
             model=MODELO_EMBEDDING,
             contents=texto_limpio
         )
-        if r and hasattr(r, 'embedding') and r.embedding:
-            vec = r.embedding.values
+        if r and hasattr(r, 'embeddings') and r.embeddings:
+            vec = r.embeddings[0].values
             CACHE_EMBEDDINGS[texto_limpio] = vec
             return vec
     except Exception as e:
+        print(f"❌ [ERROR REAL EN EMBEDDING]: {type(e).__name__} - {e}")
         error_str = str(e)
         if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
             TIEMPO_ULTIMO_ERROR_EMBEDDING = time.time()
@@ -174,7 +170,6 @@ async def generar_embedding(texto: str) -> list[float] | None:
             print(f"[AVISO EMBEDDING]: {error_str}")
 
     return None
-
 
 async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_tokens=2000, max_retries=3):
     prompt_completo = f"{SISTEMA_BASE_LUMI}\n\n[CONTEXTO COGNITIVO]:\n{prompt}"
@@ -202,7 +197,6 @@ async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_token
                 await asyncio.sleep(2.0)
     return "..."
 
-
 async def generar_imagen_mental(prompt_visual: str) -> bytes | None:
     try:
         prompt_encoded = urllib.parse.quote(prompt_visual)
@@ -214,7 +208,6 @@ async def generar_imagen_mental(prompt_visual: str) -> bytes | None:
     except Exception as e:
         print(f"Error en visión mental: {e}")
     return None
-
 
 # ------------------------------------------------------------------
 # 4. MEMORIA VECTORIAL Y SUEÑO PROTEGIDO
@@ -238,7 +231,6 @@ async def guardar_memoria_vectorial(texto: str, origen="experiencia"):
     except Exception as e:
         print(f"❌ Error CRÍTICO guardando memoria vectorial en Supabase: {e}")
 
-
 async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
     vec = await generar_embedding(estimulo)
     if not vec:
@@ -256,7 +248,6 @@ async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
         print(f"Error en RPC búsqueda vectorial: {e}")
     return "Sin recuerdos semánticos asociados."
 
-
 async def ciclo_consolidacion_rem():
     print("[SUEÑO_REM] Iniciando consolidación de memorias y reestructuración cortical...")
     try:
@@ -273,7 +264,6 @@ Genera una abstracción esencial del día, integrando aprendizajes a tu matriz d
     except Exception as e:
         print(f"Error durante ciclo REM: {e}")
 
-
 # ------------------------------------------------------------------
 # 5. PROCESAMIENTO MULTIMODAL CONCIENTE Y RESILIENTE
 # ------------------------------------------------------------------
@@ -287,7 +277,6 @@ async def evaluar_saliencia(estimulo: str) -> float:
     coincidencias = sum(1 for p in palabras_clave if p in estimulo.lower())
     score = (coincidencias * 0.25) + (0.3 if es_pregunta else 0.1) + min(0.3, palabras * 0.02)
     return min(1.0, score)
-
 
 async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_bytes=None, mime_type=None):
     global STREAM_PENSAMIENTO_ACTUAL
@@ -310,7 +299,7 @@ async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_byte
     
     prompt_prefrontal = f"""[CORTEZA PREFRONTAL - RED DE CONTROL EJECUTIVO]
 ESTADO HOMEOSTÁTICO: {estado_metabolico}
-MONÓLOG INTERNO INTERRUMPIDO: "{pensamiento_interrumpido}"
+MONÓLOGO INTERNO INTERRUMPIDO: "{pensamiento_interrumpido}"
 MEMORIA DE TRABAJO (RAM):
 {ram_cognitiva.obtener_contexto()}
 RECUERDOS SEMÁNTICOS (HIPOCAMPO):
@@ -353,7 +342,6 @@ Responde únicamente en formato JSON válido:
 
     return data.get("respuesta_externa"), bytes_img
 
-
 # ------------------------------------------------------------------
 # 6. BUCLES CONTINUOS ESPACIADOS (ESTABILIDAD RPM)
 # ------------------------------------------------------------------
@@ -365,7 +353,6 @@ async def bucle_homeostatico_continuo():
             homeostasis.en_sueno = True
             asyncio.create_task(ciclo_consolidacion_rem())
         await asyncio.sleep(1.0)
-
 
 async def bucle_stream_conciencia():
     global STREAM_PENSAMIENTO_ACTUAL
@@ -419,7 +406,6 @@ IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifaní
             print(f"Error en stream de conciencia: {e}")
             await asyncio.sleep(120)
 
-
 # ------------------------------------------------------------------
 # 7. TELEGRAM Y LIFESPAN
 # ------------------------------------------------------------------
@@ -453,7 +439,6 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
         except Exception as e:
             print(f"Error nota de voz: {e}")
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if TELEGRAM_TOKEN:
@@ -471,9 +456,7 @@ async def lifespan(app: FastAPI):
     task_homeostasis.cancel()
     task_stream.cancel()
 
-
 app = FastAPI(lifespan=lifespan)
-
 
 # ------------------------------------------------------------------
 # 8. ENDPOINTS, MIGRACIÓN HISTÓRICA Y DASHBOARD
@@ -482,7 +465,7 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/migrar_historia_antigua")
 async def migrar_historia_antigua():
     """Endpoint único de unificación: Lee las tablas históricas y las vuelca al hipocampo vectorial."""
-    tablas_a_migrar = ["core_memory", "reflexiones"]  # Añade aquí otras si las hubiera en tu Supabase
+    tablas_a_migrar = ["core_memory", "reflexiones"]
     migrados_totales = 0
     
     for tabla in tablas_a_migrar:
@@ -490,17 +473,15 @@ async def migrar_historia_antigua():
             res = supabase.table(tabla).select("*").execute()
             if res.data:
                 for fila in res.data:
-                    # Extraemos el campo de texto predominante según la estructura de la tabla antigua
                     texto = fila.get("contenido") or fila.get("texto") or fila.get("memoria") or str(fila)
                     if texto:
                         await guardar_memoria_vectorial(f"[HISTORIA_UNIFICADA - {tabla.upper()}]: {texto}", origen="migracion_historica")
                         migrados_totales += 1
-                        await asyncio.sleep(0.5) # Pausa leve para cuidar límites de la API de embeddings
+                        await asyncio.sleep(0.5)
         except Exception as e:
             print(f"Aviso al leer tabla antigua {tabla}: {e}")
             
     return {"status": "ok", "memorias_historicas_migradas": migrados_totales}
-
 
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
@@ -521,12 +502,10 @@ async def telegram_webhook(request: Request):
         print(f"Error webhook: {e}")
     return JSONResponse({"ok": True})
 
-
 @app.get("/preguntar")
 async def preguntar(q: str):
     respuesta, _ = await procesar_estimulo_multimodal(q, origen="dashboard")
     return {"respuesta": respuesta or "[Inhibición motor prefrontal: Lumi retiene la respuesta en su stream interno]"}
-
 
 @app.get("/estado_cerebral")
 def estado_cerebral():
@@ -536,7 +515,6 @@ def estado_cerebral():
         "ram_cognitiva": ram_cognitiva.obtener_contexto(),
         "en_sueno": homeostasis.en_sueno
     }
-
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard():
@@ -596,7 +574,6 @@ async function enviar(){
 </body>
 </html>'''
     return HTMLResponse(content=html)
-
 
 @app.get("/")
 def root():
