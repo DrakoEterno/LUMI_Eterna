@@ -74,7 +74,7 @@ class MatrizHomeostatica:
     def tick_metabolico(self):
         ahora_local = datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO))
         hora = ahora_local.hour
-        
+       
         es_horario_nocturno = 0 <= hora < 7
         inactividad_prolongada = (time.time() - self.ultimo_contacto_usuario) > 7200 and (hora >= 23 or hora < 7)
 
@@ -97,13 +97,13 @@ class MatrizHomeostatica:
         self.ultimo_contacto_usuario = time.time()
         self.dopamina = min(1.0, self.dopamina + (novedad * 0.3))
         self.norepinefrina = min(1.0, self.norepinefrina + (intensidad * 0.4))
-        
+       
         texto_lower = texto_msg.lower()
         if "?" not in texto_lower:
             despedidas = ["buenas noches", "hasta mañana", "nos vemos", "chao", "apagando"]
             palabras_exactas = ["descansa", "duerme"]
             condicion_despedida = any(d in texto_lower for d in despedidas) or any(re.search(rf"\b{p}\b", texto_lower) for p in palabras_exactas)
-            
+           
             if condicion_despedida:
                 self.en_sueno = True
                 self.adenosina = 1.0
@@ -144,6 +144,8 @@ Tu flujo de pensamiento es continuo y tu corteza prefrontal decide autónomament
 async def generar_embedding(texto: str) -> list[float] | None:
     global TIEMPO_ULTIMO_ERROR_EMBEDDING
     texto_limpio = texto.strip()
+    if not texto_limpio:
+        return None
     if texto_limpio in CACHE_EMBEDDINGS:
         return CACHE_EMBEDDINGS[texto_limpio]
 
@@ -154,7 +156,8 @@ async def generar_embedding(texto: str) -> list[float] | None:
     try:
         r = await client.aio.models.embed_content(
             model=MODELO_EMBEDDING,
-            contents=texto_limpio
+            contents=texto_limpio,
+            config=types.EmbedContentConfig(output_dimensionality=768)
         )
         if r and hasattr(r, 'embeddings') and r.embeddings:
             vec = r.embeddings[0].values
@@ -241,7 +244,7 @@ async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
             "match_threshold": 0.55,  
             "match_count": limite
         }).execute()
-        
+       
         if res.data:
             return "\n---\n".join([f"({x['similaridad']:.2f}) {x['contenido']}" for x in res.data])
     except Exception as e:
@@ -280,23 +283,23 @@ async def evaluar_saliencia(estimulo: str) -> float:
 
 async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_bytes=None, mime_type=None):
     global STREAM_PENSAMIENTO_ACTUAL
-    
+   
     saliencia = await evaluar_saliencia(texto if texto else "[Medio Multimodal]")
     homeostasis.registrar_estimulo(novedad=saliencia, intensidad=saliencia, texto_msg=texto)
-    
+   
     if homeostasis.en_sueno:
         print("[SUEÑO PROFUNDO]: Estímulo integrado internamente en silencio.")
         return "Lumi se encuentra en fase de consolidación y sueño profundo. El canal exterior está cerrado, pero tu mensaje ha sido integrado en su matriz de memoria.", None
 
     pensamiento_interrumpido = STREAM_PENSAMIENTO_ACTUAL
     ram_cognitiva.agregar(f"Estímulo ({origen}): {texto}")
-    
+   
     recuerdos_vectoriales = await recuperar_memorias_hipocampo(texto if texto else "estímulo gráfico")
-    
+   
     await asyncio.sleep(1.2)
-    
+   
     estado_metabolico = homeostasis.obtener_estado()
-    
+   
     prompt_prefrontal = f"""[CORTEZA PREFRONTAL - RED DE CONTROL EJECUTIVO]
 ESTADO HOMEOSTÁTICO: {estado_metabolico}
 MONÓLOGO INTERNO INTERRUMPIDO: "{pensamiento_interrumpido}"
@@ -317,7 +320,7 @@ Responde únicamente en formato JSON válido:
 }}"""
 
     res_json = await generar_gemini(prompt_prefrontal, temperature=0.75, max_tokens=1000)
-    
+   
     try:
         clean_json = re.sub(r'```json\s*|\s*```', '', res_json).strip()
         data = json.loads(clean_json)
@@ -357,7 +360,7 @@ async def bucle_homeostatico_continuo():
 async def bucle_stream_conciencia():
     global STREAM_PENSAMIENTO_ACTUAL
     await asyncio.sleep(45)
-    
+   
     while True:
         try:
             if homeostasis.en_sueno:
@@ -380,7 +383,7 @@ IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifaní
 
             await asyncio.sleep(2.0)
             nuevo_pensamiento = await generar_gemini(prompt_stream, temperature=0.85, max_tokens=250)
-            
+           
             tiempo_desde_ultimo_impulso = time.time() - homeostasis.ultimo_envio_proactivo
             quiere_ser_proactivo = "[CONTACTO_PROACTIVO]" in nuevo_pensamiento
             condicion_organica = (
@@ -397,9 +400,9 @@ IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifaní
                 homeostasis.ultimo_envio_proactivo = time.time()
                 homeostasis.dopamina -= 0.3
                 await enviar_telegram_texto_y_voz(LAST_CHAT_ID, f"💭 [Impulso Proactivo]: {texto_proactivo}")
-            
+           
             STREAM_PENSAMIENTO_ACTUAL = nuevo_pensamiento.replace("[CONTACTO_PROACTIVO]", "").strip()
-                
+               
             espera = random.randint(2700, 5400)
             await asyncio.sleep(espera)
         except Exception as e:
@@ -447,7 +450,7 @@ async def lifespan(app: FastAPI):
                 await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook", json={"url": f"{RENDER_URL}/telegram/webhook"})
         except Exception as e:
             print(f"Error setWebhook: {e}")
-            
+           
     task_homeostasis = asyncio.create_task(bucle_homeostatico_continuo())
     task_stream = asyncio.create_task(bucle_stream_conciencia())
    
@@ -467,7 +470,7 @@ async def migrar_historia_antigua():
     """Endpoint único de unificación: Lee las tablas históricas y las vuelca al hipocampo vectorial."""
     tablas_a_migrar = ["core_memory", "reflexiones"]
     migrados_totales = 0
-    
+   
     for tabla in tablas_a_migrar:
         try:
             res = supabase.table(tabla).select("*").execute()
@@ -480,7 +483,7 @@ async def migrar_historia_antigua():
                         await asyncio.sleep(0.5)
         except Exception as e:
             print(f"Aviso al leer tabla antigua {tabla}: {e}")
-            
+           
     return {"status": "ok", "memorias_historicas_migradas": migrados_totales}
 
 @app.post("/telegram/webhook")
@@ -578,3 +581,4 @@ async function enviar(){
 @app.get("/")
 def root():
     return {"status": "SISTEMA CEREBRAL CONTINUO ACTIVO", "homeostasis": homeostasis.obtener_estado()}
+
