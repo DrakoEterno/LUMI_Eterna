@@ -64,7 +64,7 @@ class RAMCognitiva:
 class MatrizHomeostatica:
     """Motor Bio-matemático continuo con ciclo de vigilia y sueño autónomo."""
     def __init__(self):
-        self.dopamina = 0.5        
+        self.dopamina = 0.5         
         self.norepinefrina = 0.2
         self.adenosina = 0.1    
         self.en_sueno = False
@@ -220,7 +220,7 @@ async def guardar_memoria_vectorial(texto: str, origen="experiencia"):
     print(f"[DEBUG GUARDAR]: Intentando generar embedding para: '{texto[:30]}...'")
     vec = await generar_embedding(texto)
     if not vec:
-        print(f"[DEBUG GUARDAR]: ❌ Falló la generación del embedding (vec es None). No se guarda en Supabase.")
+        print(f"[DEBUG GUARDAR]: ❌ Falló la generación del embedding (vec is None). No se guarda en Supabase.")
         return
     try:
         print(f"[DEBUG GUARDAR]: Embedding generado con éxito. Insertando en Supabase...")
@@ -467,24 +467,50 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/migrar_historia_antigua")
 async def migrar_historia_antigua():
-    """Endpoint único de unificación: Lee las tablas históricas y las vuelca al hipocampo vectorial."""
+    """Endpoint de unificación cortical protegido contra límites de cuota (Rate Limit)."""
     tablas_a_migrar = ["core_memory", "reflexiones"]
     migrados_totales = 0
-   
+    errores_consecutivos = 0
+    
     for tabla in tablas_a_migrar:
         try:
             res = supabase.table(tabla).select("*").execute()
             if res.data:
+                print(f"[MIGRACIÓN]: Procesando tabla '{tabla}' ({len(res.data)} registros encontrados)...")
                 for fila in res.data:
                     texto = fila.get("contenido") or fila.get("texto") or fila.get("memoria") or str(fila)
                     if texto:
-                        await guardar_memoria_vectorial(f"[HISTORIA_UNIFICADA - {tabla.upper()}]: {texto}", origen="migracion_historica")
-                        migrados_totales += 1
-                        await asyncio.sleep(0.5)
+                        vec = await generar_embedding(f"[HISTORIA_UNIFICADA - {tabla.upper()}]: {texto}")
+                        if vec:
+                            try:
+                                supabase.table("memorias_vectoriales").insert([{
+                                    "contenido": f"[HISTORIA_UNIFICADA - {tabla.upper()}]: {texto}",
+                                    "origen": "migracion_historica",
+                                    "embedding": vec,
+                                    "peso_retencion": 1.0
+                                }]).execute()
+                                migrados_totales += 1
+                                errores_consecutivos = 0
+                                print(f"[MIGRACIÓN]: ✅ Memoria migrada ({migrados_totales})")
+                            except Exception as db_err:
+                                print(f"❌ Error insertando en Supabase: {db_err}")
+                        else:
+                            print(f"⚠️ [MIGRACIÓN]: Embedding omitido (posible protección de cuota activa). Pausando extra...")
+                            errores_consecutivos += 1
+                            if errores_consecutivos >= 3:
+                                print(f"🛑 [MIGRACIÓN]: Demasiados fallos seguidos. Pausa de seguridad de 30 segundos...")
+                                await asyncio.sleep(30)
+                        
+                        # Pausa de 3 segundos entre cada petición para respetar la cuota de la API
+                        await asyncio.sleep(3.0)
         except Exception as e:
             print(f"Aviso al leer tabla antigua {tabla}: {e}")
            
-    return {"status": "ok", "memorias_historicas_migradas": migrados_totales}
+    return {
+        "status": "ok", 
+        "memorias_historicas_migradas": migrados_totales,
+        "mensaje": "Proceso de unificación cortical finalizado de forma segura."
+    }
 
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
