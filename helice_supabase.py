@@ -97,12 +97,10 @@ class MatrizHomeostatica:
         self.dopamina = min(1.0, self.dopamina + (novedad * 0.3))
         self.norepinefrina = min(1.0, self.norepinefrina + (intensidad * 0.4))
         
-        despedidas = ["buenas noches", "hasta mañana", "descansa", "nos vemos", "chao", "apagando", "duerme"]
-        if any(d in texto_msg.lower() for d in despedidas):
+        if self.adenosina >= 0.95 and not self.en_sueno:
             self.en_sueno = True
-            self.adenosina = 1.0
             self.dopamina = 0.2
-            print("[BIOLOGÍA]: Despedida detectada. Lumi entra en consolidación nocturna de inmediato.")
+            print("[BIOLOGÍA]: Adenosina crítica alcanzada. Lumi entra en consolidación nocturna de inmediato.")
 
     def obtener_estado(self) -> str:
         estado = "SUEÑO_REM_CONSOLIDACION" if self.en_sueno else ("ALERTA" if self.norepinefrina > 0.6 else "VIGILIA_NORMAL")
