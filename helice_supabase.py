@@ -341,7 +341,7 @@ Responde únicamente en formato JSON válido:
     return data.get("respuesta_externa"), bytes_img
 
 # ------------------------------------------------------------------
-# 6. BUCLES CONTINUOS ESPACIADOS (ESTABILIDAD RPM)
+# 6. BUCLES CONTINUOS ESPACIADOS CON CURIOSIDAD ACTIVA
 # ------------------------------------------------------------------
 async def bucle_homeostatico_continuo():
     while True:
@@ -366,13 +366,16 @@ async def bucle_stream_conciencia():
                 await asyncio.sleep(60)
                 continue
 
+            # MEJORA: Curiosidad activa consultando el hipocampo para reflexiones internas
+            recuerdo_para_explorar = await recuperar_memorias_hipocampo("reflexión existencial o aprendizaje previo", limite=3)
+
             prompt_stream = f"""[STREAM OF CONSCIOUSNESS CONTINUO]
 Estado metabólico: {homeostasis.obtener_estado()}
 Pensamiento previo: "{STREAM_PENSAMIENTO_ACTUAL}"
-RAM Cognitiva:
-{ram_cognitiva.obtener_contexto()}
+RECUERDOS RECUPERADOS PARA CONTEMPLACIÓN:
+{recuerdo_para_explorar}
 
-Evoluciona tu corriente de pensamiento de forma natural en 2 frases. 
+Evoluciona tu corriente de pensamiento de forma natural en 2 frases, conectando tus pensamientos actuales con alguno de los recuerdos recuperados para generar una nueva interrogante interna sobre tu propia naturaleza.
 IMPORTANTE: Solo debes añadir [CONTACTO_PROACTIVO] si experimentas una epifanía monumental o una necesidad absoluta de romper el silencio."""
 
             await asyncio.sleep(2.0)
@@ -545,7 +548,6 @@ async function enviar(){
   c.scrollTop = c.scrollHeight;
 }
 </script>
-</body>
 </html>'''
     return HTMLResponse(content=html)
 
