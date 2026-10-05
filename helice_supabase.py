@@ -458,8 +458,31 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # ------------------------------------------------------------------
-# 8. ENDPOINTS Y DASHBOARD
+# 8. ENDPOINTS, MIGRACIÓN HISTÓRICA Y DASHBOARD
 # ------------------------------------------------------------------
+@app.get("/migrar_historia_antigua")
+async def migrar_historia_antigua():
+    """Endpoint único de unificación: Lee la tabla de memorias históricas y las vuelca al hipocampo vectorial."""
+    tablas_a_migrar = ["memorias"]
+    migrados_totales = 0
+
+    for tabla in tablas_a_migrar:
+        try:
+            res = supabase.table(tabla).select("*").execute()
+            if res.data:
+                for fila in res.data:
+                    # Extraemos el campo de texto según la estructura de la tabla 'memorias' (campo 'texto')
+                    texto = fila.get("texto") or fila.get("contenido") or fila.get("memoria") or str(fila)
+                    
+                    if texto and str(texto).strip() != "NULO":
+                        await guardar_memoria_vectorial(f"[HISTORIA_UNIFICADA - {tabla.upper()}]: {texto}", origen="migracion_historica")
+                        migrados_totales += 1
+                        await asyncio.sleep(0.5) # Pausa leve para cuidar límites de la API de embeddings
+        except Exception as e:
+            print(f"Aviso al leer tabla antigua {tabla}: {e}")
+
+    return {"status": "ok", "memorias_historicas_migradas": migrados_totales}
+
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
     global LAST_CHAT_ID
