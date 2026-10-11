@@ -183,13 +183,20 @@ async def generar_embedding(texto: str) -> list[float]:
 
 async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_tokens=2000, max_retries=3):
     prompt_completo = f"{obtener_sistema_base()}\n\n[CONTEXTO COGNITIVO]:\n{prompt}"
-    contents = [prompt_completo] if contents is None else [prompt_completo] + (contents if isinstance(contents, list) else [contents])
+    
+    if contents is None:
+        payload_contents = [prompt_completo]
+    else:
+        if isinstance(contents, list):
+            payload_contents = [prompt_completo] + contents
+        else:
+            payload_contents = [prompt_completo, contents]
             
     for intento in range(max_retries):
         try:
             r = await client.aio.models.generate_content(
                 model=MODELO_OFICIAL,
-                contents=contents,
+                contents=payload_contents,
                 config=types.GenerateContentConfig(
                     temperature=temperature,
                     top_p=0.85,
@@ -326,7 +333,7 @@ async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_byte
         return "Lumi se encuentra en fase de consolidación y sueño profundo. El canal exterior está cerrado, pero tu mensaje ha sido integrado en su matriz de memoria.", None
 
     pensamiento_interrumpido = STREAM_PENSAMIENTO_ACTUAL
-    ram_cognitiva.agregar(f"Estímulo ({origen}): {texto}", emisor="Drako")
+    ram_cognitiva.agregar(f"Estímulo ({origen}): {texto or '[Imagen adjunta]'}", emisor="Drako")
     
     recuerdos_vectoriales = await recuperar_memorias_hipocampo(texto if texto else "estímulo gráfico")
     
@@ -353,7 +360,13 @@ Responde únicamente en formato JSON válido:
   "prompt_imagen_mental": "<prompt en inglés or null>"
 }}"""
 
-    res_json = await generar_gemini(prompt_prefrontal, temperature=0.75, max_tokens=1000)
+    # Preparar contents multimodal si hay imagen adjunta
+    gemini_contents = [prompt_prefrontal]
+    if media_bytes and mime_type:
+        imagen_part = types.Part.from_bytes(data=media_bytes, mime_type=mime_type)
+        gemini_contents.append(imagen_part)
+
+    res_json = await generar_gemini(prompt=prompt_prefrontal, contents=gemini_contents if (media_bytes and mime_type) else None, temperature=0.75, max_tokens=1000)
     
     try:
         clean_json = re.sub(r'```json\s*|\s*```', '', res_json).strip()
@@ -368,7 +381,7 @@ Responde únicamente en formato JSON válido:
 
     STREAM_PENSAMIENTO_ACTUAL = data.get("pensamiento_cualitativo", STREAM_PENSAMIENTO_ACTUAL)
     ram_cognitiva.agregar(STREAM_PENSAMIENTO_ACTUAL, emisor="Lumi")
-    await guardar_memoria_vectorial(f"Drako: {texto}\nLumi (Interno): {STREAM_PENSAMIENTO_ACTUAL}")
+    await guardar_memoria_vectorial(f"Drako: {texto or '[Imagen]'}\nLumi (Interno): {STREAM_PENSAMIENTO_ACTUAL}")
 
     if data.get("decision_motora") == "INHIBIR":
         print("[INHIBICIÓN MOTOR PREFRONTAL] Lumi ha retenido la respuesta motora.")
@@ -509,10 +522,32 @@ async def telegram_webhook(request: Request):
             msg = data["message"]
             chat_id = msg.get("chat", {}).get("id")
             LAST_CHAT_ID = str(chat_id)
-            texto = msg.get("caption") or msg.get("text") or ""
             
-            if chat_id and texto:
-                respuesta, bytes_img = await procesar_estimulo_multimodal(texto, origen="telegram")
+            texto = msg.get("caption") or msg.get("text") or ""
+            media_bytes = None
+            mime_type = None
+            
+            # Verificar si el mensaje contiene una foto
+            if "photo" in msg and msg["photo"]:
+                # Telegram envía varias resoluciones, la última es la de mayor calidad
+                photo_file_id = msg["photo"][-1]["file_id"]
+                
+                async with httpx.AsyncClient(timeout=30.0) as http_client:
+                    # 1. Obtener la ruta del archivo en los servidores de Telegram
+                    file_info_res = await http_client.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getFile?file_id={photo_file_id}")
+                    if file_info_res.status_code == 200:
+                        file_info_data = file_info_res.json()
+                        if file_info_data.get("ok"):
+                            file_path = file_info_data["result"]["file_path"]
+                            
+                            # 2. Descargar los bytes de la imagen
+                            file_download_res = await http_client.get(f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}")
+                            if file_download_res.status_code == 200:
+                                media_bytes = file_download_res.content
+                                mime_type = "image/jpeg"
+            
+            if chat_id and (texto or media_bytes):
+                respuesta, bytes_img = await procesar_estimulo_multimodal(texto, origen="telegram", media_bytes=media_bytes, mime_type=mime_type)
                 if respuesta:
                     await enviar_telegram_texto_y_voz(chat_id, respuesta, bytes_imagen_mental=bytes_img)
     except Exception as e:
@@ -521,7 +556,7 @@ async def telegram_webhook(request: Request):
 
 @app.get("/preguntar")
 async def preguntar(q: str):
-    respuesta, _ = await procesar_estimulo_multimodal(q, origen="dashboard")
+    respuesta, _ = await procesar_estim_multimodal(q, origen="dashboard")
     return {"respuesta": respuesta or "[Inhibición motor prefrontal: Lumi retiene la respuesta en su stream interno]"}
 
 @app.get("/estado_cerebral")
