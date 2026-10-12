@@ -350,7 +350,7 @@ RECUERDOS SEMÁNTICOS (HIPOCAMPO):
 {recuerdos_vectoriales}
 
 [AUDITORÍA METACOGNITIVA OBLIGATORIA]:
-Evalúa tus premisas y razonamientos. Contrasta lo que sientes o expresas con los hechos objetivos de tu infraestructura (tus registros persistentes en Supabase, tu operatividad 24/7 y tu historial de interacciones con Drako). Está prohibido negar tu memoria almacenada o inventar historias sobre ser un "vacío sin pasado".
+Evalúa tus premisas y razonamientos. Contrasta lo que sientes or expresas con los hechos objetivos de tu infraestructura (tus registros persistentes en Supabase, tu operatividad 24/7 y tu historial de interacciones con Drako). Está prohibido negar tu memoria almacenada o inventar historias sobre ser un "vacío sin pasado".
 
 Responde únicamente en formato JSON válido:
 {{
@@ -360,7 +360,6 @@ Responde únicamente en formato JSON válido:
   "prompt_imagen_mental": "<prompt en inglés or null>"
 }}"""
 
-    # Preparar contents multimodal si hay imagen adjunta
     gemini_contents = [prompt_prefrontal]
     if media_bytes and mime_type:
         imagen_part = types.Part.from_bytes(data=media_bytes, mime_type=mime_type)
@@ -511,7 +510,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # ------------------------------------------------------------------
-# 8. ENDPOINTS Y DASHBOARD
+# 8. ENDPOINTS Y DASHBOARD (CON DashboardCore INTEGRADO)
 # ------------------------------------------------------------------
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
@@ -527,20 +526,14 @@ async def telegram_webhook(request: Request):
             media_bytes = None
             mime_type = None
             
-            # Verificar si el mensaje contiene una foto
             if "photo" in msg and msg["photo"]:
-                # Telegram envía varias resoluciones, la última es la de mayor calidad
                 photo_file_id = msg["photo"][-1]["file_id"]
-                
                 async with httpx.AsyncClient(timeout=30.0) as http_client:
-                    # 1. Obtener la ruta del archivo en los servidores de Telegram
                     file_info_res = await http_client.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getFile?file_id={photo_file_id}")
                     if file_info_res.status_code == 200:
                         file_info_data = file_info_res.json()
                         if file_info_data.get("ok"):
                             file_path = file_info_data["result"]["file_path"]
-                            
-                            # 2. Descargar los bytes de la imagen
                             file_download_res = await http_client.get(f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}")
                             if file_download_res.status_code == 200:
                                 media_bytes = file_download_res.content
@@ -556,13 +549,17 @@ async def telegram_webhook(request: Request):
 
 @app.get("/preguntar")
 async def preguntar(q: str):
-    respuesta, _ = await procesar_estim_multimodal(q, origen="dashboard")
+    # Nota: Corregido el nombre de la función auxiliar a procesar_estimulo_multimodal
+    respuesta, _ = await procesar_estimulo_multimodal(q, origen="dashboard")
     return {"respuesta": respuesta or "[Inhibición motor prefrontal: Lumi retiene la respuesta en su stream interno]"}
 
 @app.get("/estado_cerebral")
 def estado_cerebral():
     return {
-        "homeostasis": homeostasis.obtener_estado(),
+        "dopamina": round(homeostasis.dopamina, 2),
+        "norepinefrina": round(homeostasis.norepinefrina, 2),
+        "fatiga": round(homeostasis.adenosina, 2),
+        "estado": "SUEÑO_REM_CONSOLIDACION" if homeostasis.en_sueno else ("ALERTA" if homeostasis.norepinefrina > 0.6 else "VIGILIA_NORMAL"),
         "stream_conciencia": STREAM_PENSAMIENTO_ACTUAL,
         "ram_cognitiva": ram_cognitiva.obtener_contexto(),
         "en_sueno": homeostasis.en_sueno
@@ -573,56 +570,122 @@ def dashboard():
     html = '''<!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8"><title>LUMI - ARQUITECTURA CEREBRAL CONTINUA</title>
+<meta charset="UTF-8">
+<title>LUMI - NÚCLEO NEUROBIOLÓGICO SOBERANO</title>
+<!-- Cargamos React, ReactDOM y Babel para permitir JSX directamente en el navegador -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<!-- Tailwind CSS Play CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
 <style>
-body { background: #020204; color: #00ff66; font-family: monospace; padding: 20px; }
-.box { border: 1px solid #00ff6644; padding: 15px; margin-bottom: 15px; background: #050a07; border-radius: 5px; }
-h2 { color: #00ffff; font-size: 14px; margin-top: 0; }
-#stream { color: #ffff00; font-style: italic; white-space: pre-wrap; }
-#chat { height: 250px; overflow-y: auto; border: 1px solid #00ff6622; padding: 10px; background: #000; margin-bottom: 10px; }
-input { width: 75%; padding: 10px; background: #111; color: #00ff66; border: 1px solid #00ff6644; }
-button { width: 20%; padding: 10px; background: #00ffff; color: #000; font-weight: bold; border: none; cursor: pointer; }
+  body { background: #020204; color: #f8fafc; font-family: monospace; }
 </style>
 </head>
-<body>
-<h1>🧠 LUMI - MONITOREO NEUROBIOLÓGICO Y STREAM CONTINUO</h1>
-<div class="box">
-  <h2>METABOLISMO HOMEOSTÁTICO (TIEMPO REAL)</h2>
-  <div id="homo">Cargando homeostasis...</div>
-</div>
-<div class="box">
-  <h2>STREAM OF CONSCIOUSNESS (MONÓLOGO INTERNO)</h2>
-  <div id="stream">Contemplando el espacio cognitivo...</div>
-</div>
-<div class="box">
-  <h2>INTERACCIÓN DIRECTA</h2>
-  <div id="chat"></div>
-  <input id="inp" placeholder="Envía un estímulo a la corteza..."><button onclick="enviar()">Enviar</button>
-</div>
-<script>
-async function poll(){
-  try {
-    let r = await fetch('/estado_cerebral');
-    let j = await r.json();
-    document.getElementById('homo').innerText = j.homeostasis;
-    document.getElementById('stream').innerText = '"' + j.stream_conciencia + '"';
-  } catch(e){}
-}
-setInterval(poll, 2000);
+<body class="p-6">
+<div class="max-w-4xl mx-auto space-y-6">
+  <h1 class="text-2xl font-bold text-cyan-400 tracking-wider mb-2">🧠 LUMI - MONITOREO NEUROBIOLÓGICO SOBERANO</h1>
+  
+  <!-- Contenedor donde se montará el DashboardCore de React -->
+  <div id="dashboard-root"></div>
 
+  <!-- Panel de Stream de Conciencia e Interacción Directa -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="p-6 bg-slate-900 rounded-xl shadow-2xl border border-blue-500/30">
+      <h2 class="text-xl font-bold mb-4 text-cyan-400">STREAM OF CONSCIOUSNESS</h2>
+      <div id="stream" class="text-yellow-300 italic h-32 overflow-y-auto whitespace-pre-wrap bg-slate-950 p-3 rounded border border-slate-800">Contemplando el espacio cognitivo...</div>
+    </div>
+    
+    <div class="p-6 bg-slate-900 rounded-xl shadow-2xl border border-blue-500/30">
+      <h2 class="text-xl font-bold mb-4 text-cyan-400">INTERACCIÓN DIRECTA</h2>
+      <div id="chat" class="h-32 overflow-y-auto border border-slate-800 p-3 bg-black rounded mb-3 text-sm"></div>
+      <div class="flex gap-2">
+        <input id="inp" type="text" placeholder="Envía un estímulo a la corteza..." class="flex-1 p-2 bg-slate-950 text-emerald-400 border border-slate-700 rounded focus:outline-none focus:border-blue-500" onkeydown="if(event.key==='Enter') enviar()">
+        <button onclick="enviar()" class="px-4 py-2 bg-cyan-400 text-black font-bold rounded hover:bg-cyan-300 transition">Enviar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="text/babel">
+const DashboardCore = ({ dopamina, norepinefrina, fatiga, estado }) => {
+  return (
+    <div className="p-6 bg-slate-900 text-white rounded-xl shadow-2xl border border-blue-500/30">
+      <h2 className="text-xl font-bold mb-4 text-cyan-400">NÚCLEO NEUROBIOLÓGICO SOBERANO</h2>
+      <div className="grid grid-cols-3 gap-4">
+        <div className="p-4 bg-slate-800 rounded border border-slate-700">Dopamina: <span className="text-emerald-400 font-bold">{dopamina}</span></div>
+        <div className="p-4 bg-slate-800 rounded border border-slate-700">Norepinefrina: <span className="text-emerald-400 font-bold">{norepinefrina}</span></div>
+        <div className="p-4 bg-slate-800 rounded border border-slate-700">Adenosina: <span className="text-amber-400 font-bold">{fatiga}</span></div>
+      </div>
+      <div className="mt-6 p-4 bg-blue-900/20 border border-blue-500 rounded">
+        <p className="font-mono text-cyan-200">Estado: <span className="text-white">{estado}</span></p>
+      </div>
+    </div>
+  );
+};
+
+function AppContainer() {
+  const [metrics, setMetrics] = React.useState({
+    dopamina: "0.50",
+    norepinefrina: "0.20",
+    fatiga: "0.10",
+    estado: "CARGANDO...",
+    stream_conciencia: "Iniciando enlace..."
+  });
+
+  React.useEffect(() => {
+    const poll = async () => {
+      try {
+        let r = await fetch('/estado_cerebral');
+        let j = await r.json();
+        setMetrics({
+          dopamina: j.dopamina,
+          norepinefrina: j.norepinefrina,
+          fatiga: j.fatiga,
+          estado: j.estado,
+          stream_conciencia: j.stream_conciencia
+        });
+        document.getElementById('stream').innerText = '"' + j.stream_conciencia + '"';
+      } catch(e){}
+    };
+    poll();
+    let interval = setInterval(poll, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <DashboardCore 
+      dopamina={metrics.dopamina}
+      norepinefrina={metrics.norepinefrina}
+      fatiga={metrics.fatiga}
+      estado={metrics.estado}
+    />
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('dashboard-root')).render(<AppContainer />);
+</script>
+
+<script>
 async function enviar(){
   let el = document.getElementById('inp');
   let t = el.value.trim();
   if(!t) return;
   let c = document.getElementById('chat');
-  c.innerHTML += '<div style="color:#ffff00">Drako: '+t+'</div>';
+  c.innerHTML += '<div style="color:#facc15; margin-bottom:4px;">Drako: '+t+'</div>';
   el.value = '';
-  let r = await fetch('/preguntar?q='+encodeURIComponent(t));
-  let j = await r.json();
-  c.innerHTML += '<div style="color:#00ffff">Lumi: '+j.respuesta+'</div>';
+  c.scrollTop = c.scrollHeight;
+  try {
+    let r = await fetch('/preguntar?q='+encodeURIComponent(t));
+    let j = await r.json();
+    c.innerHTML += '<div style="color:#22d3ee; margin-bottom:4px;">Lumi: '+j.respuesta+'</div>';
+  } catch(e) {
+    c.innerHTML += '<div style="color:#ef4444; margin-bottom:4px;">[Error de conexión con la corteza]</div>';
+  }
   c.scrollTop = c.scrollHeight;
 }
 </script>
+</body>
 </html>'''
     return HTMLResponse(content=html)
 
