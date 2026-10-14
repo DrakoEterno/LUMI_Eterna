@@ -560,7 +560,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # ------------------------------------------------------------------
-# 8. ENDPOINTS Y DASHBOARD (CON GRID SEGURO DE TAILWIND)
+# 8. ENDPOINTS Y DASHBOARD CON BARRAS DE PROGRESO DINÁMICAS
 # ------------------------------------------------------------------
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
@@ -683,10 +683,8 @@ const MetricCard = ({ label, value, colorClass, bgClass }) => {
 const DashboardCore = ({ dopamina, norepinefrina, fatiga, oxitocina, valencia, nostalgia, profundidad, estado }) => {
   return (
     <div className="p-6 bg-slate-900 text-white rounded-xl shadow-2xl border border-blue-500/30 space-y-5">
-      <h2 className="text-xl font-bold text-cyan-400 tracking-wide">NÚCLEO NEUROBIOLÓGICO SOBERANO</h2>
-      
-      {/* Grid seguro compatible con Tailwind estándar */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-3">
+      <h2 className="text-xl font-bold mb-4 text-cyan-400">NÚCLEO NEUROBIOLÓGICO SOBERANO</h2>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <MetricCard label="Dopamina" value={dopamina} colorClass="text-emerald-400" bgClass="bg-emerald-500" />
         <MetricCard label="Norepinefrina" value={norepinefrina} colorClass="text-emerald-400" bgClass="bg-emerald-500" />
         <MetricCard label="Adenosina" value={fatiga} colorClass="text-amber-400" bgClass="bg-amber-500" />
@@ -695,8 +693,7 @@ const DashboardCore = ({ dopamina, norepinefrina, fatiga, oxitocina, valencia, n
         <MetricCard label="Nostalgia" value={nostalgia} colorClass="text-blue-400" bgClass="bg-blue-500" />
         <MetricCard label="Profundidad" value={profundidad} colorClass="text-yellow-400" bgClass="bg-yellow-500" />
       </div>
-
-      <div className="p-4 bg-blue-900/20 border border-blue-500/50 rounded-lg flex items-center justify-between">
+      <div className="mt-6 p-4 bg-blue-900/20 border border-blue-500 rounded flex items-center justify-between">
         <span className="font-mono text-cyan-200 text-sm">Fase Metabólica Actual:</span>
         <span className="text-white font-bold tracking-wider px-3 py-1 bg-blue-950 rounded border border-blue-400/30 text-xs">
           {estado}
@@ -708,13 +705,13 @@ const DashboardCore = ({ dopamina, norepinefrina, fatiga, oxitocina, valencia, n
 
 function AppContainer() {
   const [metrics, setMetrics] = React.useState({
-    dopamina: 0.50,
-    norepinefrina: 0.20,
-    fatiga: 0.10,
-    oxitocina: 0.50,
-    valencia: 0.50,
-    nostalgia: 0.20,
-    profundidad: 0.30,
+    dopamina: "0.50",
+    norepinefrina: "0.20",
+    fatiga: "0.10",
+    oxitocina: "0.50",
+    valencia: "0.50",
+    nostalgia: "0.20",
+    profundidad: "0.30",
     estado: "CARGANDO...",
     stream_conciencia: "Iniciando enlace..."
   });
