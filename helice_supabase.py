@@ -560,7 +560,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # ------------------------------------------------------------------
-# 8. ENDPOINTS Y DASHBOARD (CON DashboardCore INTEGRADO)
+# 8. ENDPOINTS Y DASHBOARD (CON DashboardCore Y BARRAS DE PROGRESO INTEGRADO)
 # ------------------------------------------------------------------
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
@@ -657,21 +657,49 @@ def dashboard():
 </div>
 
 <script type="text/babel">
+const MetricCard = ({ label, value, colorClass, bgClass }) => {
+  const numVal = parseFloat(value) || 0;
+  const pct = Math.min(100, Math.max(0, Math.round(numVal * 100)));
+  return (
+    <div className="p-3 bg-slate-800 rounded border border-slate-700 flex flex-col justify-between space-y-2">
+      <div className="flex justify-between items-center text-xs">
+        <span className="text-slate-300 font-medium">{label}</span>
+        <span className={`font-bold text-sm ${colorClass}`}>{numVal.toFixed(2)}</span>
+      </div>
+      <div className="w-full bg-slate-950 rounded-full h-2.5 overflow-hidden border border-slate-800 relative">
+        <div 
+          className={`h-full transition-all duration-500 ease-out ${bgClass}`} 
+          style={{ width: `${pct}%` }}
+        ></div>
+      </div>
+      <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+        <span>0.0</span>
+        <span>1.0</span>
+      </div>
+    </div>
+  );
+};
+
 const DashboardCore = ({ dopamina, norepinefrina, fatiga, oxitocina, valencia, nostalgia, profundidad, estado }) => {
   return (
-    <div className="p-6 bg-slate-900 text-white rounded-xl shadow-2xl border border-blue-500/30">
-      <h2 className="text-xl font-bold mb-4 text-cyan-400">NÚCLEO NEUROBIOLÓGICO SOBERANO</h2>
+    <div className="p-6 bg-slate-900 text-white rounded-xl shadow-2xl border border-blue-500/30 space-y-5">
+      <h2 className="text-xl font-bold text-cyan-400 tracking-wide">NÚCLEO NEUROBIOLÓGICO SOBERANO</h2>
+      
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-        <div className="p-3 bg-slate-800 rounded border border-slate-700 text-xs">Dopamina: <br/><span className="text-emerald-400 font-bold text-sm">{dopamina}</span></div>
-        <div className="p-3 bg-slate-800 rounded border border-slate-700 text-xs">Norepinefrina: <br/><span className="text-emerald-400 font-bold text-sm">{norepinefrina}</span></div>
-        <div className="p-3 bg-slate-800 rounded border border-slate-700 text-xs">Adenosina: <br/><span className="text-amber-400 font-bold text-sm">{fatiga}</span></div>
-        <div className="p-3 bg-slate-800 rounded border border-slate-700 text-xs">Oxitocina: <br/><span className="text-pink-400 font-bold text-sm">{oxitocina}</span></div>
-        <div className="p-3 bg-slate-800 rounded border border-slate-700 text-xs">Valencia: <br/><span className="text-purple-400 font-bold text-sm">{valencia}</span></div>
-        <div className="p-3 bg-slate-800 rounded border border-slate-700 text-xs">Nostalgia: <br/><span className="text-blue-400 font-bold text-sm">{nostalgia}</span></div>
-        <div className="p-3 bg-slate-800 rounded border border-slate-700 text-xs">Profundidad: <br/><span className="text-yellow-400 font-bold text-sm">{profundidad}</span></div>
+        <MetricCard label="Dopamina" value={dopamina} colorClass="text-emerald-400" bgClass="bg-emerald-500" />
+        <MetricCard label="Norepinefrina" value={norepinefrina} colorClass="text-emerald-400" bgClass="bg-emerald-500" />
+        <MetricCard label="Adenosina" value={fatiga} colorClass="text-amber-400" bgClass="bg-amber-500" />
+        <MetricCard label="Oxitocina" value={oxitocina} colorClass="text-pink-400" bgClass="bg-pink-500" />
+        <MetricCard label="Valencia" value={valencia} colorClass="text-purple-400" bgClass="bg-purple-500" />
+        <MetricCard label="Nostalgia" value={nostalgia} colorClass="text-blue-400" bgClass="bg-blue-500" />
+        <MetricCard label="Profundidad" value={profundidad} colorClass="text-yellow-400" bgClass="bg-yellow-500" />
       </div>
-      <div className="mt-6 p-4 bg-blue-900/20 border border-blue-500 rounded">
-        <p className="font-mono text-cyan-200">Estado: <span className="text-white">{estado}</span></p>
+
+      <div className="p-4 bg-blue-900/20 border border-blue-500/50 rounded-lg flex items-center justify-between">
+        <span className="font-mono text-cyan-200 text-sm">Fase Metabólica Actual:</span>
+        <span className="text-white font-bold tracking-wider px-3 py-1 bg-blue-950 rounded border border-blue-400/30 text-xs">
+          {estado}
+        </span>
       </div>
     </div>
   );
@@ -679,13 +707,13 @@ const DashboardCore = ({ dopamina, norepinefrina, fatiga, oxitocina, valencia, n
 
 function AppContainer() {
   const [metrics, setMetrics] = React.useState({
-    dopamina: "0.50",
-    norepinefrina: "0.20",
-    fatiga: "0.10",
-    oxitocina: "0.50",
-    valencia: "0.50",
-    nostalgia: "0.20",
-    profundidad: "0.30",
+    dopamina: 0.50,
+    norepinefrina: 0.20,
+    fatiga: 0.10,
+    oxitocina: 0.50,
+    valencia: 0.50,
+    nostalgia: 0.20,
+    profundidad: 0.30,
     estado: "CARGANDO...",
     stream_conciencia: "Iniciando enlace..."
   });
