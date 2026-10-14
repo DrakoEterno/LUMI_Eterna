@@ -785,3 +785,4 @@ async function enviar(){
 @app.get("/")
 def root():
     return {"status": "SISTEMA CEREBRAL CONTINUO ACTIVO", "homeostasis": homeostasis.obtener_estado()}
+
