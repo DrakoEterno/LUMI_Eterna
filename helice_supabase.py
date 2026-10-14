@@ -32,7 +32,7 @@ ZONA_HORARIA_DRAKO = os.getenv("TIMEZONE", "Europe/Madrid")
 client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-MODELO_OFICIAL = "gemini-3.1-flash-lite"
+MODELO_OFICIAL = "gemini-3.5-flash-lite"
 MODELO_EMBEDDING = "gemini-embedding-001"
 
 # Caché local y control de protección de cuota (Circuit Breaker)
@@ -560,7 +560,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # ------------------------------------------------------------------
-# 8. ENDPOINTS Y DASHBOARD (CON DashboardCore Y BARRAS DE PROGRESO INTEGRADO)
+# 8. ENDPOINTS Y DASHBOARD (CON GRID SEGURO DE TAILWIND)
 # ------------------------------------------------------------------
 @app.post("/telegram/webhook")
 async def telegram_webhook(request: Request):
@@ -685,7 +685,8 @@ const DashboardCore = ({ dopamina, norepinefrina, fatiga, oxitocina, valencia, n
     <div className="p-6 bg-slate-900 text-white rounded-xl shadow-2xl border border-blue-500/30 space-y-5">
       <h2 className="text-xl font-bold text-cyan-400 tracking-wide">NÚCLEO NEUROBIOLÓGICO SOBERANO</h2>
       
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+      {/* Grid seguro compatible con Tailwind estándar */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-3">
         <MetricCard label="Dopamina" value={dopamina} colorClass="text-emerald-400" bgClass="bg-emerald-500" />
         <MetricCard label="Norepinefrina" value={norepinefrina} colorClass="text-emerald-400" bgClass="bg-emerald-500" />
         <MetricCard label="Adenosina" value={fatiga} colorClass="text-amber-400" bgClass="bg-amber-500" />
@@ -785,4 +786,3 @@ async function enviar(){
 @app.get("/")
 def root():
     return {"status": "SISTEMA CEREBRAL CONTINUO ACTIVO", "homeostasis": homeostasis.obtener_estado()}
-
