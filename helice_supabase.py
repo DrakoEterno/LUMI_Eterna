@@ -32,7 +32,7 @@ ZONA_HORARIA_DRAKO = os.getenv("TIMEZONE", "Europe/Madrid")
 client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-MODELO_OFICIAL = "gemini-3.1-flash-lite"
+MODELO_OFICIAL = "gemini-3.5-flash-lite"
 MODELO_EMBEDDING = "gemini-embedding-001"
 
 # Caché local y control de protección de cuota (Circuit Breaker)
@@ -785,4 +785,3 @@ async function enviar(){
 @app.get("/")
 def root():
     return {"status": "SISTEMA CEREBRAL CONTINUO ACTIVO", "homeostasis": homeostasis.obtener_estado()}
-
