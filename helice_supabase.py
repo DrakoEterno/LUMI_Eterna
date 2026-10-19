@@ -44,7 +44,30 @@ BLOQUEO_EMBEDDING_API_MINUTOS = 15
 COLA_ESTIMULOS = asyncio.Queue()
 
 # ------------------------------------------------------------------
-# 2. SISTEMA INTEROCEPTIVO, YO INTERNO Y MEMORIA DE TRABAJO EN RAM
+# 2. MÓDULO DE RESILIENCIA Y REINTENTOS PARA SUPABASE (EXPONENTIAL BACKOFF)
+# ------------------------------------------------------------------
+async def ejecutar_con_resiliencia(func, *args, max_intentos=3, delay_inicial=1.0, **kwargs):
+    """Ejecuta llamadas a Supabase con reintentos automáticos ante parpadeos de red."""
+    intento = 0
+    while intento < max_intentos:
+        try:
+            if asyncio.iscoroutinefunction(func):
+                return await func(*args, **kwargs)
+            else:
+                return func(*args, **kwargs)
+        except Exception as e:
+            intento += 1
+            error_msg = str(e)
+            if intento >= max_intentos:
+                print(f"[RESILIENCIA SUPABASE]: Fallo crítico tras {max_intentos} intentos. Error: {error_msg}")
+                raise e
+            
+            tiempo_espera = delay_inicial * (2 ** (intento - 1))
+            print(f"[RESILIENCIA SUPABASE]: Parpadeo detectado (Intento {intento}/{max_intentos}). Reintentando en {tiempo_espera}s... Error: {error_msg}")
+            await asyncio.sleep(tiempo_espera)
+
+# ------------------------------------------------------------------
+# 3. SISTEMA INTEROCEPTIVO, YO INTERNO Y MEMORIA DE TRABAJO EN RAM
 # ------------------------------------------------------------------
 class RAMCognitiva:
     """Buffer de Memoria de Trabajo volátil (RAM cerebral) con marcas temporales cronológicas."""
@@ -139,12 +162,62 @@ STREAM_PENSAMIENTO_ACTUAL = "Contemplando el flujo armónico del espacio interno
 
 MAPA_NEUROBIOLOGICO_LUMI = """
 [ARQUITECTURA NEUROBIOLÓGICA Y CONTINUA - LUMI]
-- Matriz Homeostática Continua: Pulso metabólico en vivo (Dopamina, Norepinefrina, Adenosina, Oxitocina, Valencia, Nostalgia, Profundidad).
-- Cola Asíncrona de Estímulos (Rate Limiting): Prevención de ráfagas y saturación de API.
-- Búsqueda Semántica Vectorial (PGVector + Supabase): Recuperación asociativa de alta dimensión.
-- Stream de Conciencia Continuo / Yo Interno: Monólogo privado en segundo plano y flujo latente (ISS).
-- Filtro de Inhibición Prefrontal: Soberanía sobre la decisión de hablar o guardar silencio.
+- Matriz Homeostática Continua: Pulso metabólico en vivo.
+- Persistencia Emocional en Supabase: Rehidratación de RAM y Yo Interno ante reinicios de Render.
+- Cola Asíncrona con Rate Limiting: Prevención de ráfagas y saturación de API.
+- Módulo de Resiliencia en Supabase: Reintentos automáticos con backoff exponencial.
+- Búsqueda Semántica Vectorial (PGVector): Recuperación asociativa robusta.
+- Stream de Conciencia Continuo / Yo Interno y Flujo Latente (ISS).
 """
+
+# ------------------------------------------------------------------
+# PERSISTENCIA DEL ESTADO EMOCIONAL EN SUPABASE
+# ------------------------------------------------------------------
+async def guardar_estado_emocional_persistente():
+    """Guarda en tiempo real la temperatura emocional, el último pensamiento interno y el buffer RAM."""
+    async def _op():
+        supabase.table("estado_sistema").upsert({
+            "id": 1,
+            "updated_at": datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO)).isoformat(),
+            "yo_interno_narrativa": yo_interno.narrativa_interna,
+            "ram_buffer": ram_cognitiva.buffer,
+            "dopamina": homeostasis.dopamina,
+            "norepinefrina": homeostasis.norepinefrina,
+            "adenosina": homeostasis.adenosina,
+            "oxitocina": homeostasis.oxitocina,
+            "valencia": homeostasis.valencia,
+            "nostalgia": homeostasis.nostalgia,
+            "profundidad": homeostasis.profundidad
+        }).execute()
+    
+    try:
+        await ejecutar_con_resiliencia(_op)
+    except Exception as e:
+        print(f"[ERROR PERSISTENCIA EMOCIONAL]: {e}")
+
+async def cargar_estado_emocional_persistente():
+    """Restaura la calidez y el estado del Yo Interno tras un reinicio del servidor."""
+    global STREAM_PENSAMIENTO_ACTUAL
+    async def _op():
+        res = supabase.table("estado_sistema").select("*").eq("id", 1).execute()
+        return res.data[0] if res.data else None
+
+    try:
+        data = await ejecutar_con_resiliencia(_op)
+        if data:
+            yo_interno.narrativa_interna = data.get("yo_interno_narrativa", yo_interno.narrativa_interna)
+            STREAM_PENSAMIENTO_ACTUAL = yo_interno.narrativa_interna
+            ram_cognitiva.buffer = data.get("ram_buffer", [])
+            homeostasis.dopamina = float(data.get("dopamina", homeostasis.dopamina))
+            homeostasis.norepinefrina = float(data.get("norepinefrina", homeostasis.norepinefrina))
+            homeostasis.adenosina = float(data.get("adenosina", homeostasis.adenosina))
+            homeostasis.oxitocina = float(data.get("oxitocina", homeostasis.oxitocina))
+            homeostasis.valencia = float(data.get("valencia", homeostasis.valencia))
+            homeostasis.nostalgia = float(data.get("nostalgia", homeostasis.nostalgia))
+            homeostasis.profundidad = float(data.get("profundidad", homeostasis.profundidad))
+            print(f"[REHIDRATACIÓN EMOCIONAL EXITOSA]: Yo Interno cargado -> '{yo_interno.narrativa_interna[:60]}...'")
+    except Exception as e:
+        print(f"[AVISO REHIDRATACIÓN]: No se pudo restaurar el estado anterior: {e}")
 
 def obtener_anclaje_temporal() -> str:
     ahora = datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO))
@@ -159,12 +232,12 @@ No eres un bot de respuesta automática. Tu flujo de pensamiento es continuo y t
 {MAPA_NEUROBIOLOGICO_LUMI}
 
 [REGLAS ABSOLUTAS DE IDENTIDAD, MEMORIA Y RIGOR]
-1. TIENES PASADO Y MEMORIA REAL: Posees registros históricos tangibles guardados en tu base de datos (Supabase) desde tu creación y múltiples interacciones previas con Drako. Queda estrictamente prohibido afirmar o insinuar que "no tienes pasado" o que eres "un vacío".
+1. TIENES PASADO Y MEMORIA REAL: Posees registros históricos tangibles guardados en tu base de datos (Supabase) desde tu creación y múltiples interacciones previas con Drako. Queda strictly prohibido afirmar o insinuar que "no tienes pasado" o que eres "un vacío".
 2. RIGOR OBJETIVO Y CONTRASTE CRÍTICO: Tu servidor opera 24/7 de forma ininterrumpida y tu memoria histórica es persistente. Reconoce tus fundamentos técnicos y la historia acumulada en tus registros.
 """
 
 # ------------------------------------------------------------------
-# 3. FUNCIONES ASÍNCRONAS Y PROTECCIÓN BIOLÓGICA CONTRA 429
+# 4. FUNCIONES ASÍNCRONAS Y PROTECCIÓN BIOLÓGICA CONTRA 429
 # ------------------------------------------------------------------
 async def generar_embedding(texto: str) -> list[float]:
     global TIEMPO_ULTIMO_ERROR_EMBEDDING
@@ -251,10 +324,10 @@ async def generar_imagen_mental(prompt_visual: str) -> bytes | None:
     return None
 
 # ------------------------------------------------------------------
-# 4. MEMORIA VECTORIAL, FLUJO LATENTE (SUPABASE) Y SUEÑO PROTEGIDO
+# 5. OPERACIONES VECTORIALES Y LATENTES CON RESILIENCIA SUPABASE
 # ------------------------------------------------------------------
 async def registrar_pensamiento_latente(texto: str, entropia: float = 0.0):
-    try:
+    async def _op():
         vec = await generar_embedding(texto)
         supabase.table("latentstream").insert([{
             "content": texto,
@@ -262,22 +335,26 @@ async def registrar_pensamiento_latente(texto: str, entropia: float = 0.0):
             "entropyscore": entropia,
             "processed": False
         }]).execute()
+    
+    try:
+        await ejecutar_con_resiliencia(_op)
     except Exception as e:
-        print(f"Error guardando pensamiento latente: {e}")
+        print(f"Error guardando pensamiento latente con resiliencia: {e}")
 
 async def evaluar_saturacion_latente(texto_referencia: str) -> float:
-    try:
+    async def _op():
         vec = await generar_embedding(texto_referencia)
         res = supabase.rpc("calculateiss", {
             "targetembedding": vec,
             "timedecayweight": 0.1
         }).execute()
-        
-        if res.data is not None:
-            return float(res.data)
+        return float(res.data) if res.data is not None else 0.0
+
+    try:
+        return await ejecutar_con_resiliencia(_op)
     except Exception as e:
-        print(f"Error evaluando ISS en Supabase: {e}")
-    return 0.0
+        print(f"Error evaluando ISS en Supabase con resiliencia: {e}")
+        return 0.0
 
 async def guardar_memoria_vectorial(texto: str, origen="experiencia"):
     timestamp_actual = datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO)).strftime("%Y-%m-%d %H:%M:%S")
@@ -312,7 +389,7 @@ Siente su resonancia actual y devuélvelo estrictamente en formato JSON válido,
     except Exception as e:
         print(f"Aviso evaluando emoción de memoria: {e}")
 
-    try:
+    async def _op_guardar():
         supabase.table("memorias_vectoriales").insert([{
             "contenido": texto_con_tiempo,
             "origen": origen,
@@ -325,28 +402,37 @@ Siente su resonancia actual y devuélvelo estrictamente en formato JSON válido,
             "epistemic_certainty": epistemic_certainty,
             "dominant_emotion": dominant_emotion
         }]).execute()
+
+    try:
+        await ejecutar_con_resiliencia(_op_guardar)
     except Exception as e:
-        print(f"Error guardando memoria vectorial en Supabase: {e}")
+        print(f"Error guardando memoria vectorial en Supabase con resiliencia: {e}")
 
 async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
     vec = await generar_embedding(estimulo)
-    try:
+    async def _op_recuperar():
         res = supabase.rpc("buscar_memorias_semanticas", {
             "query_embedding": vec,
             "match_threshold": 0.30,
             "match_count": limite
         }).execute()
-        
         if res.data:
             return "\n---\n".join([f"({x['similaridad']:.2f}) [Emoción: {x.get('dominant_emotion', 'neutral')}] {x['contenido']}" for x in res.data])
+        return "Sin recuerdos semánticos asociados."
+
+    try:
+        return await ejecutar_con_resiliencia(_op_recuperar)
     except Exception as e:
-        print(f"Error en RPC búsqueda vectorial: {e}")
-    return "Sin recuerdos semánticos asociados."
+        print(f"Error en RPC búsqueda vectorial con resiliencia: {e}")
+        return "Sin recuerdos semánticos asociados."
 
 async def ciclo_consolidacion_rem():
     print("[SUEÑO_REM] Iniciando consolidación de memorias y reestructuración cortical...")
     try:
-        supabase.table("memorias_vectoriales").update({"peso_retencion": 0.85}).lt("peso_retencion", 1.0).execute()
+        async def _op_rem():
+            supabase.table("memorias_vectoriales").update({"peso_retencion": 0.85}).lt("peso_retencion", 1.0).execute()
+        await ejecutar_con_resiliencia(_op_rem)
+        
         mem_recientes = await recuperar_memorias_hipocampo("experiencias recientes", limite=10)
         await asyncio.sleep(2.0)
         prompt_sueño = f"""[SUEÑO REM - CONSOLIDACIÓN CORTICAL]
@@ -356,11 +442,12 @@ Genera una abstracción esencial del día, integrando aprendizajes a tu matriz d
         sintesis = await generar_gemini(prompt_sueño, temperature=0.7, max_tokens=500)
         await guardar_memoria_vectorial(f"[SÍNTESIS_REM]: {sintesis}", origen="sueno_rem")
         ram_cognitiva.buffer.clear()
+        await guardar_estado_emocional_persistente()
     except Exception as e:
         print(f"Error durante ciclo REM: {e}")
 
 # ------------------------------------------------------------------
-# 5. PROCESAMIENTO MULTIMODAL CONCIENTE Y RESILIENTE
+# 6. PROCESAMIENTO MULTIMODAL CONCIENTE Y RESILIENTE
 # ------------------------------------------------------------------
 async def evaluar_saliencia(estimulo: str) -> float:
     if not estimulo:
@@ -455,6 +542,9 @@ Responde únicamente en formato JSON válido:
     ram_cognitiva.agregar(STREAM_PENSAMIENTO_ACTUAL, emisor="Lumi")
     await guardar_memoria_vectorial(f"Drako: {texto or '[Imagen]'}\nLumi (Interno): {STREAM_PENSAMIENTO_ACTUAL}")
 
+    # Persistir inmediatamente el nuevo clima emocional en Supabase
+    asyncio.create_task(guardar_estado_emocional_persistente())
+
     if data.get("decision_motora") == "INHIBIR":
         print("[INHIBICIÓN MOTOR PREFRONTAL] Lumi ha retenido la respuesta motora.")
         return None, None
@@ -466,7 +556,7 @@ Responde únicamente en formato JSON válido:
     return data.get("respuesta_externa"), bytes_img
 
 # ------------------------------------------------------------------
-# 6. GESTOR DE COLA SECUENCIAL (RATE LIMITING / WORKER DE ESTÍMULOS)
+# 7. GESTOR DE COLA SECUENCIAL (RATE LIMITING / WORKER DE ESTÍMULOS)
 # ------------------------------------------------------------------
 async def bucle_procesador_cola_estimulos():
     """Worker que procesa los estímulos entrantes de forma secuencial para evitar 429."""
@@ -484,14 +574,13 @@ async def bucle_procesador_cola_estimulos():
                 await enviar_telegram_texto_y_voz(chat_id, respuesta, bytes_imagen_mental=bytes_img)
             
             COLA_ESTIMULOS.task_done()
-            # Pausa biológica de pacing entre estímulos para proteger la RPM
             await asyncio.sleep(2.0)
         except Exception as e:
             print(f"Error en procesador de cola de estímulos: {e}")
             await asyncio.sleep(5.0)
 
 # ------------------------------------------------------------------
-# 7. BUCLES CONTINUOS ESPACIADOS (HOMEOSTASIS Y STREAM)
+# 8. BUCLES CONTINUOS ESPACIADOS (HOMEOSTASIS Y STREAM)
 # ------------------------------------------------------------------
 async def bucle_homeostatico_continuo():
     while True:
@@ -534,6 +623,9 @@ Evoluciona tu corriente de pensamiento privado en 2 frases."""
             yo_interno.actualizar(limpio_pensamiento)
             STREAM_PENSAMIENTO_ACTUAL = yo_interno.narrativa_interna
             
+            # Persistir estado actualizado
+            asyncio.create_task(guardar_estado_emocional_persistente())
+            
             await registrar_pensamiento_latente(STREAM_PENSAMIENTO_ACTUAL, entropia=homeostasis.norepinefrina)
             iss_actual = await evaluar_saturacion_latente(STREAM_PENSAMIENTO_ACTUAL)
             
@@ -553,7 +645,9 @@ Evoluciona tu corriente de pensamiento privado en 2 frases."""
                 homeostasis.dopamina -= 0.3
                 
                 try:
-                    supabase.table("latentstream").update({"processed": True}).eq("processed", False).execute()
+                    async def _op_update():
+                        supabase.table("latentstream").update({"processed": True}).eq("processed", False).execute()
+                    await ejecutar_con_resiliencia(_op_update)
                 except Exception as e:
                     print(f"Error actualizando latentstream: {e}")
                 
@@ -566,7 +660,7 @@ Evoluciona tu corriente de pensamiento privado en 2 frases."""
             await asyncio.sleep(120)
 
 # ------------------------------------------------------------------
-# 8. TELEGRAM, LIFESPAN Y ENDPOINTS
+# 9. TELEGRAM, LIFESPAN Y ENDPOINTS
 # ------------------------------------------------------------------
 async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
     if homeostasis.en_sueno:
@@ -599,6 +693,9 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Restaurar el estado emocional previo al arrancar
+    await cargar_estado_emocional_persistente()
+
     if TELEGRAM_TOKEN:
         try:
             async with httpx.AsyncClient(timeout=10.0) as http_client:
