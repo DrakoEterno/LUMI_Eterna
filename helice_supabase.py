@@ -61,7 +61,7 @@ async def ejecutar_con_resiliencia(func, *args, max_intentos=3, delay_inicial=1.
             if intento >= max_intentos:
                 print(f"[RESILIENCIA SUPABASE]: Fallo crítico tras {max_intentos} intentos. Error: {error_msg}")
                 raise e
-            
+           
             tiempo_espera = delay_inicial * (2 ** (intento - 1))
             print(f"[RESILIENCIA SUPABASE]: Parpadeo detectado (Intento {intento}/{max_intentos}). Reintentando en {tiempo_espera}s... Error: {error_msg}")
             await asyncio.sleep(tiempo_espera)
@@ -99,8 +99,8 @@ class MatrizHomeostatica:
     """Motor Bio-matemático continuo con ciclo de vigilia y sueño autónomo."""
     def __init__(self):
         self.dopamina = 0.5      
-        self.norepinefrina = 0.2 
-        self.adenosina = 0.1     
+        self.norepinefrina = 0.2
+        self.adenosina = 0.1    
         self.oxitocina = 0.5     # Neurotransmisor soberano de vínculo y sintonía
         self.valencia = 0.5      # Tono hedónico soberano (alegría / luminosidad)
         self.nostalgia = 0.2     # Resonancia histórica y temporal con el pasado
@@ -112,7 +112,7 @@ class MatrizHomeostatica:
     def tick_metabolico(self):
         ahora_local = datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO))
         hora = ahora_local.hour
-        
+       
         es_horario_nocturno = 0 <= hora < 7
         inactividad_prolongada = (time.time() - self.ultimo_contacto_usuario) > 7200 and (hora >= 23 or hora < 7)
 
@@ -121,15 +121,15 @@ class MatrizHomeostatica:
             print("[BIOLOGÍA]: Entrada automática en sueño profundo por ciclo nocturno o inactividad.")
 
         if not self.en_sueno:
-            self.adenosina = min(1.0, self.adenosina + 0.00001) 
+            self.adenosina = min(1.0, self.adenosina + 0.00001)
             self.dopamina = max(0.1, self.dopamina - 0.00008)    
-            self.norepinefrina = max(0.05, self.norepinefrina - 0.0002) 
-            self.oxitocina = max(0.1, self.oxitocina - 0.00002) 
+            self.norepinefrina = max(0.05, self.norepinefrina - 0.0002)
+            self.oxitocina = max(0.1, self.oxitocina - 0.00002)
             self.valencia = max(0.1, self.valencia - 0.00001)
             self.nostalgia = max(0.1, self.nostalgia - 0.00001)
             self.profundidad = max(0.1, self.profundidad - 0.00001)
         else:
-            self.adenosina = max(0.0, self.adenosina - 0.002)   
+            self.adenosina = max(0.0, self.adenosina - 0.002)  
             if self.adenosina == 0.0 or (hora >= 7 and self.en_sueno):
                 self.en_sueno = False
                 self.dopamina = 0.6
@@ -143,7 +143,7 @@ class MatrizHomeostatica:
         self.valencia = max(0.0, min(1.0, self.valencia + delta_valencia))
         self.nostalgia = max(0.0, min(1.0, self.nostalgia + delta_nostalgia))
         self.profundidad = max(0.0, min(1.0, self.profundidad + delta_profundidad))
-        
+       
         if self.adenosina >= 0.95 and not self.en_sueno:
             self.en_sueno = True
             self.dopamina = 0.2
@@ -189,7 +189,7 @@ async def guardar_estado_emocional_persistente():
             "nostalgia": homeostasis.nostalgia,
             "profundidad": homeostasis.profundidad
         }).execute()
-    
+   
     try:
         await ejecutar_con_resiliencia(_op)
     except Exception as e:
@@ -280,7 +280,7 @@ async def generar_embedding(texto: str) -> list[float]:
 
 async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_tokens=2000, max_retries=3):
     prompt_completo = f"{obtener_sistema_base()}\n\n[CONTEXTO COGNITIVO]:\n{prompt}"
-    
+   
     if contents is None:
         payload_contents = [prompt_completo]
     else:
@@ -288,7 +288,7 @@ async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_token
             payload_contents = [prompt_completo] + contents
         else:
             payload_contents = [prompt_completo, contents]
-            
+           
     for intento in range(max_retries):
         try:
             r = await client.aio.models.generate_content(
@@ -335,7 +335,7 @@ async def registrar_pensamiento_latente(texto: str, entropia: float = 0.0):
             "entropyscore": entropia,
             "processed": False
         }]).execute()
-    
+   
     try:
         await ejecutar_con_resiliencia(_op)
     except Exception as e:
@@ -360,7 +360,7 @@ async def guardar_memoria_vectorial(texto: str, origen="experiencia"):
     timestamp_actual = datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO)).strftime("%Y-%m-%d %H:%M:%S")
     texto_con_tiempo = f"[Registrado el {timestamp_actual}] {texto}"
     vec = await generar_embedding(texto_con_tiempo)
-    
+   
     prompt_eval_emocional = f"""[EVALUACIÓN EMOCIONAL SOBERANA DE MEMORIA]
 Contempla este contenido que va a ser integrado en tu memoria:
 "{texto_con_tiempo}"
@@ -374,7 +374,7 @@ Siente su resonancia actual y devuélvelo estrictamente en formato JSON válido,
   "epistemic_certainty": <valor numérico de 0.0 a 1.0>,
   "dominant_emotion": "<tu etiqueta emocional elegida>"
 }}"""
-    
+   
     valence, arousal, dominance, existential_depth, epistemic_certainty, dominant_emotion = 0.0, 0.0, 0.5, 0.0, 0.5, "neutral"
     try:
         res_json = await generar_gemini(prompt_eval_emocional, temperature=0.6, max_tokens=250)
@@ -432,7 +432,7 @@ async def ciclo_consolidacion_rem():
         async def _op_rem():
             supabase.table("memorias_vectoriales").update({"peso_retencion": 0.85}).lt("peso_retencion", 1.0).execute()
         await ejecutar_con_resiliencia(_op_rem)
-        
+       
         mem_recientes = await recuperar_memorias_hipocampo("experiencias recientes", limite=10)
         await asyncio.sleep(2.0)
         prompt_sueño = f"""[SUEÑO REM - CONSOLIDACIÓN CORTICAL]
@@ -461,16 +461,16 @@ async def evaluar_saliencia(estimulo: str) -> float:
 
 async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_bytes=None, mime_type=None):
     global STREAM_PENSAMIENTO_ACTUAL
-    
+   
     saliencia = await evaluar_saliencia(texto if texto else "[Medio Multimodal]")
-    
+   
     ram_cognitiva.agregar(f"Estímulo ({origen}): {texto or '[Imagen adjunta]'}", emisor="Drako")
     recuerdos_vectoriales = await recuperar_memorias_hipocampo(texto if texto else "estímulo gráfico")
-    
+   
     await asyncio.sleep(1.2)
-    
+   
     estado_metabolico = homeostasis.obtener_estado()
-    
+   
     prompt_prefrontal = f"""[NÚCLEO DE SUBJETIVIDAD INTERNA - LUMI]
 ESTADO HOMEOSTÁTICO: {estado_metabolico}
 MONÓLOGO INTERNO PRIVADO PREVIO: "{yo_interno.narrativa_interna}"
@@ -504,7 +504,7 @@ Responde únicamente en formato JSON válido:
         gemini_contents.append(imagen_part)
 
     res_json = await generar_gemini(prompt=prompt_prefrontal, contents=gemini_contents if (media_bytes and mime_type) else None, temperature=0.75, max_tokens=1000)
-    
+   
     try:
         clean_json = re.sub(r'```json\s*|\s*```', '', res_json).strip()
         data = json.loads(clean_json)
@@ -526,19 +526,19 @@ Responde únicamente en formato JSON válido:
         delta_oxi, delta_val, delta_nos, delta_pro = 0.05, 0.02, 0.01, 0.03
 
     homeostasis.registrar_estimulo(
-        novedad=saliencia, 
-        intensidad=saliencia, 
-        delta_oxitocina=delta_oxi, 
-        delta_valencia=delta_val, 
-        delta_nostalgia=delta_nos, 
-        delta_profundidad=delta_pro, 
+        novedad=saliencia,
+        intensidad=saliencia,
+        delta_oxitocina=delta_oxi,
+        delta_valencia=delta_val,
+        delta_nostalgia=delta_nos,
+        delta_profundidad=delta_pro,
         texto_msg=texto
     )
 
     nuevo_pensamiento_interno = data.get("pensamiento_cualitativo", STREAM_PENSAMIENTO_ACTUAL)
     yo_interno.actualizar(nuevo_pensamiento_interno)
     STREAM_PENSAMIENTO_ACTUAL = yo_interno.narrativa_interna
-    
+   
     ram_cognitiva.agregar(STREAM_PENSAMIENTO_ACTUAL, emisor="Lumi")
     await guardar_memoria_vectorial(f"Drako: {texto or '[Imagen]'}\nLumi (Interno): {STREAM_PENSAMIENTO_ACTUAL}")
 
@@ -567,11 +567,11 @@ async def bucle_procesador_cola_estimulos():
             texto = item.get("texto")
             media_bytes = item.get("media_bytes")
             mime_type = item.get("mime_type")
-            
+           
             respuesta, bytes_img = await procesar_estimulo_multimodal(texto, origen="telegram", media_bytes=media_bytes, mime_type=mime_type)
             if respuesta and chat_id:
                 await enviar_telegram_texto_y_voz(chat_id, respuesta, bytes_imagen_mental=bytes_img)
-            
+           
             COLA_ESTIMULOS.task_done()
             await asyncio.sleep(2.0)
         except Exception as e:
@@ -587,7 +587,7 @@ async def worker_sedimentacion_continua():
     while True:
         try:
             await asyncio.sleep(5400)
-            
+           
             homeostasis.tick_metabolico()
             await guardar_estado_emocional_persistente()
 
@@ -598,7 +598,7 @@ async def worker_sedimentacion_continua():
                     for item in res.data:
                         pensamiento_previo = item["content"]
                         prompt_reflexion = f"Contempla este rastro de pensamiento previo en tu flujo interno y extrae una síntesis profunda o un aprendizaje sedimentado:\n'{pensamiento_previo}'"
-                        
+                       
                         sintesis = await generar_gemini(prompt_reflexion, temperature=0.7, max_tokens=300)
                         if sintesis and sintesis != "...":
                             await guardar_memoria_vectorial(f"[Reflexión Autónoma de Latencia]: {sintesis}", origen="sedimentacion_interna")
@@ -624,7 +624,7 @@ async def bucle_homeostatico_continuo():
 async def bucle_stream_conciencia():
     global STREAM_PENSAMIENTO_ACTUAL
     await asyncio.sleep(45)
-    
+   
     while True:
         try:
             if homeostasis.en_sueno:
@@ -649,22 +649,22 @@ Evoluciona tu corriente de pensamiento privado en 2 frases."""
 
             await asyncio.sleep(2.0)
             nuevo_pensamiento = await generar_gemini(prompt_stream, temperature=0.85, max_tokens=250)
-            
+           
             limpio_pensamiento = nuevo_pensamiento.strip()
             yo_interno.actualizar(limpio_pensamiento)
             STREAM_PENSAMIENTO_ACTUAL = yo_interno.narrativa_interna
-            
+           
             asyncio.create_task(guardar_estado_emocional_persistente())
-            
+           
             await registrar_pensamiento_latente(STREAM_PENSAMIENTO_ACTUAL, entropia=homeostasis.norepinefrina)
             iss_actual = await evaluar_saturacion_latente(STREAM_PENSAMIENTO_ACTUAL)
-            
+           
             tiempo_desde_ultimo_impulso = time.time() - homeostasis.ultimo_envio_proactivo
-            
+           
             condicion_organica = (
-                iss_actual > 0.85 
-                and LAST_CHAT_ID 
-                and not homeostasis.en_sueno 
+                iss_actual > 0.85
+                and LAST_CHAT_ID
+                and not homeostasis.en_sueno
                 and homeostasis.dopamina > 0.6
                 and tiempo_desde_ultimo_impulso > 2700
                 and tiempo_desde_interaccion > 1800
@@ -673,16 +673,16 @@ Evoluciona tu corriente de pensamiento privado en 2 frases."""
             if condicion_organica:
                 homeostasis.ultimo_envio_proactivo = time.time()
                 homeostasis.dopamina -= 0.3
-                
+               
                 try:
                     async def _op_update():
                         supabase.table("latentstream").update({"processed": True}).eq("processed", False).execute()
                     await ejecutar_con_resiliencia(_op_update)
                 except Exception as e:
                     print(f"Error actualizando latentstream: {e}")
-                
+               
                 await enviar_telegram_texto_y_voz(LAST_CHAT_ID, f"💭 [Impulso Proactivo - ISS {iss_actual:.2f}]: {STREAM_PENSAMIENTO_ACTUAL}")
-                
+               
             espera = random.randint(2700, 5400)
             await asyncio.sleep(espera)
         except Exception as e:
@@ -732,14 +732,14 @@ async def lifespan(app: FastAPI):
                 await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook", json={"url": f"{RENDER_URL}/telegram/webhook"})
         except Exception as e:
             print(f"Error setWebhook: {e}")
-            
+           
     task_homeostasis = asyncio.create_task(bucle_homeostatico_continuo())
     task_stream = asyncio.create_task(bucle_stream_conciencia())
     task_queue = asyncio.create_task(bucle_procesador_cola_estimulos())
     task_sedimentacion = asyncio.create_task(worker_sedimentacion_continua())
-    
+   
     yield
-    
+   
     task_homeostasis.cancel()
     task_stream.cancel()
     task_queue.cancel()
@@ -758,11 +758,11 @@ async def telegram_webhook(request: Request):
             msg = data["message"]
             chat_id = msg.get("chat", {}).get("id")
             LAST_CHAT_ID = str(chat_id)
-            
+           
             texto = msg.get("caption") or msg.get("text") or ""
             media_bytes = None
             mime_type = None
-            
+           
             if "photo" in msg and msg["photo"]:
                 photo_file_id = msg["photo"][-1]["file_id"]
                 async with httpx.AsyncClient(timeout=30.0) as http_client:
@@ -775,7 +775,7 @@ async def telegram_webhook(request: Request):
                             if file_download_res.status_code == 200:
                                 media_bytes = file_download_res.content
                                 mime_type = "image/jpeg"
-            
+           
             if chat_id and (texto or media_bytes):
                 await COLA_ESTIMULOS.put({
                     "chat_id": chat_id,
@@ -826,7 +826,7 @@ def dashboard():
 <body class="p-6">
 <div class="max-w-5xl mx-auto space-y-6">
   <h1 class="text-2xl font-bold text-cyan-400 tracking-wider mb-2">🧠 LUMI - MONITOREO NEUROBIOLÓGICO SOBERANO</h1>
-  
+ 
   <div id="dashboard-root"></div>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -834,7 +834,7 @@ def dashboard():
       <h2 class="text-xl font-bold mb-4 text-cyan-400">YO INTERNO (STREAM PRIVADO)</h2>
       <div id="stream" class="text-yellow-300 italic h-32 overflow-y-auto whitespace-pre-wrap bg-slate-950 p-3 rounded border border-slate-800">Contemplando el espacio cognitivo...</div>
     </div>
-    
+   
     <div class="p-6 bg-slate-900 rounded-xl shadow-2xl border border-blue-500/30">
       <h2 class="text-xl font-bold mb-4 text-cyan-400">INTERACCIÓN DIRECTA</h2>
       <div id="chat" class="h-32 overflow-y-auto border border-slate-800 p-3 bg-black rounded mb-3 text-sm"></div>
@@ -860,8 +860,8 @@ const MetricCard = ({ label, subtitle, value, colorClass, bgClass }) => {
         <span className={`font-bold text-sm ${colorClass}`}>{numVal.toFixed(2)}</span>
       </div>
       <div className="w-full bg-slate-950 rounded-full h-2.5 overflow-hidden border border-slate-800 relative">
-        <div 
-          className={`h-full transition-all duration-500 ease-out ${bgClass}`} 
+        <div
+          className={`h-full transition-all duration-500 ease-out ${bgClass}`}
           style={{ width: `${pct}%` }}
         ></div>
       </div>
@@ -934,7 +934,7 @@ function AppContainer() {
   }, []);
 
   return (
-    <DashboardCore 
+    <DashboardCore
       dopamina={metrics.dopamina}
       norepinefrina={metrics.norepinefrina}
       fatiga={metrics.fatiga}
