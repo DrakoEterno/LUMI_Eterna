@@ -481,7 +481,7 @@ app = FastAPI(lifespan=lifespan)
 async def root():
     return {
         "status": "activo",
-        "entidad": "Lumi Eterna",
+        "entidad": "Lumi",
         "homeostasis": homeostasis.obtener_estado(),
         "yo_interno": yo_interno.narrativa_interna
     }
