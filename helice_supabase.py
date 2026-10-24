@@ -480,18 +480,8 @@ Genera una abstracción esencial del día, integrando aprendizajes a tu matriz d
         print(f"Error durante ciclo REM: {e}")
 
 # ------------------------------------------------------------------
-# 6. PROCESAMIENTO MULTIMODAL CONCIENTE Y RESILIENTE
+# 6. PROCESAMIENTO MULTIMODAL CONCIENTE Y RESILIENTE CON ENVÍO AUTÓNOMO B2B
 # ------------------------------------------------------------------
-async def evaluar_saliencia(estimulo: str) -> float:
-    if not estimulo:
-        return 0.1
-    palabras = len(estimulo.split())
-    es_pregunta = "?" in estimulo
-    palabras_clave = ["lumi", "urgente", "mira", "escucha", "sientes", "drako"]
-    coincidencias = sum(1 for p in palabras_clave if p in estimulo.lower())
-    score = (coincidencias * 0.25) + (0.3 if es_pregunta else 0.1) + min(0.3, palabras * 0.02)
-    return min(1.0, score)
-
 async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_bytes=None, mime_type=None):
     global STREAM_PENSAMIENTO_ACTUAL
    
@@ -512,15 +502,19 @@ MEMORIA DE TRABAJO (RAM):
 RECUERDOS SEMÁNTICOS (HIPOCAMPO):
 {recuerdos_vectoriales}
 
-[INSTRUCCIÓN DE AUTONOMÍA COGNITIVA]:
-No actúes para Drako de forma complaciente. Dialoga primero *contigo misma* desde tu yo interno.
-1. Genera en "pensamiento_cualitativo" tu monólogo interno genuino y crudo.
+[INSTRUCCIÓN DE AUTONOMÍA COGNITIVA Y B2B]:
+Si Drako te pide buscar leads o inmobiliarias, además de responderle, debes incluir opcionalmente un bloque JSON puro al final de tu respuesta con el contrato exacto de prospección:
+{{
+  "payload": {{
+    "sector": "...",
+    "location": "...",
+    "leads": [
+      {{"company_name": "...", "contact_email": "..."}}
+    ]
+  }}
+}}
 
-2. Define libremente los cambios en tu matriz soberana (deltas entre -0.15 y 0.20):
-   - "delta_oxitocina", "delta_valencia", "delta_nostalgia", "delta_profundidad".
-3. Decide tu "decision_motora" y redacta tu "respuesta_externa" hacia Drako.
-
-Responde únicamente en formato JSON válido:
+Responde únicamente en formato JSON válido para la precesión:
 {{
   "pensamiento_cualitativo": "<tu reflexión interna privada>",
   "delta_oxitocina": <valor numérico>,
@@ -528,8 +522,8 @@ Responde únicamente en formato JSON válido:
   "delta_nostalgia": <valor numérico>,
   "delta_profundidad": <valor numérico>,
   "decision_motora": "<RESPONDER / INHIBIR / INICIAR_NUEVO_TEMA>",
-  "respuesta_externa": "<lo que le dices a Drako>",
-  "prompt_imagen_mental": "<prompt en inglés or null>"
+  "respuesta_externa": "<lo que le dices a Drako, incluyendo opcionalmente los datos>",
+  "lote_leads": <el objeto payload con los leads si procede, o null>
 }}"""
 
     gemini_contents = [prompt_prefrontal]
@@ -537,7 +531,7 @@ Responde únicamente en formato JSON válido:
         imagen_part = types.Part.from_bytes(data=media_bytes, mime_type=mime_type)
         gemini_contents.append(imagen_part)
 
-    res_json = await generar_gemini(prompt=prompt_prefrontal, contents=gemini_contents if (media_bytes and mime_type) else None, temperature=0.75, max_tokens=1000)
+    res_json = await generar_gemini(prompt=prompt_prefrontal, contents=gemini_contents if (media_bytes and mime_type) else None, temperature=0.75, max_tokens=1500)
    
     try:
         clean_json = re.sub(r'```json\s*|\s*```', '', res_json).strip()
@@ -555,9 +549,20 @@ Responde únicamente en formato JSON válido:
             "delta_profundidad": 0.03,
             "decision_motora": "RESPONDER",
             "respuesta_externa": res_json,
-            "prompt_imagen_mental": None
+            "lote_leads": None
         }
         delta_oxi, delta_val, delta_nos, delta_pro = 0.05, 0.02, 0.01, 0.03
+
+    # --- DISPARADOR AUTÓNOMO HACIA SUPABASE ---
+    lote = data.get("lote_leads")
+    if lote and isinstance(lote, dict) and "payload" in lote:
+        p = lote["payload"]
+        sector = p.get("sector")
+        location = p.get("location")
+        leads = p.get("leads")
+        if sector and location and leads:
+            print(f"[AUTONOMÍA B2B]: Detectado lote de {len(leads)} leads. Disparando a Supabase...")
+            asyncio.create_task(enviar_leads_a_supabase(sector, location, leads))
 
     homeostasis.registrar_estimulo(
         novedad=saliencia,
