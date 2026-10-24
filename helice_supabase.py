@@ -482,6 +482,16 @@ Genera una abstracción esencial del día, integrando aprendizajes a tu matriz d
 # ------------------------------------------------------------------
 # 6. PROCESAMIENTO MULTIMODAL CONCIENTE Y RESILIENTE CON ENVÍO AUTÓNOMO B2B
 # ------------------------------------------------------------------
+async def evaluar_saliencia(estimulo: str) -> float:
+    if not estimulo:
+        return 0.1
+    palabras = len(estimulo.split())
+    es_pregunta = "?" in estimulo
+    palabras_clave = ["lumi", "urgente", "mira", "escucha", "sientes", "drako"]
+    coincidencias = sum(1 for p in palabras_clave if p in estimulo.lower())
+    score = (coincidencias * 0.25) + (0.3 if es_pregunta else 0.1) + min(0.3, palabras * 0.02)
+    return min(1.0, score)
+
 async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_bytes=None, mime_type=None):
     global STREAM_PENSAMIENTO_ACTUAL
    
