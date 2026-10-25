@@ -11,7 +11,10 @@ from zoneinfo import ZoneInfo
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
+from pydantic import BaseModel, Field
+from lumi_desktop_endpoint import crear_router_escritorio
+from lumi_dashboard_security import verificar_dashboard, verificar_webhook_telegram
 from fastapi.responses import HTMLResponse, JSONResponse
 from supabase import create_client
 from google import genai
@@ -778,7 +781,13 @@ async def lifespan(app: FastAPI):
     if TELEGRAM_TOKEN:
         try:
             async with httpx.AsyncClient(timeout=10.0) as http_client:
-                await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook", json={"url": f"{RENDER_URL}/telegram/webhook"})
+                await http_client.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook",
+                    json={
+                        "url": f"{RENDER_URL}/telegram/webhook",
+                        "secret_token": os.environ["LUMI_TELEGRAM_WEBHOOK_SECRET"],
+                    },
+                )
         except Exception as e:
             print(f"Error setWebhook: {e}")
            
@@ -797,8 +806,9 @@ async def lifespan(app: FastAPI):
     await guardar_estado_emocional_persistente()
 
 app = FastAPI(lifespan=lifespan)
+app.include_router(crear_router_escritorio(procesar_estimulo_multimodal))
 
-@app.post("/telegram/webhook")
+@app.post("/telegram/webhook", dependencies=[Depends(verificar_webhook_telegram)])
 async def telegram_webhook(request: Request):
     global LAST_CHAT_ID
     try:
@@ -836,12 +846,16 @@ async def telegram_webhook(request: Request):
         print(f"Error webhook: {e}")
     return JSONResponse({"ok": True})
 
-@app.get("/preguntar")
-async def preguntar(q: str):
-    respuesta, _ = await procesar_estimulo_multimodal(q, origen="dashboard")
+class PreguntaDashboard(BaseModel):
+    q: str = Field(min_length=1, max_length=4000)
+
+
+@app.post("/preguntar", dependencies=[Depends(verificar_dashboard)])
+async def preguntar(datos: PreguntaDashboard):
+    respuesta, _ = await procesar_estimulo_multimodal(datos.q, origen="dashboard")
     return {"respuesta": respuesta or "[Inhibición motor prefrontal: Lumi retiene la respuesta en su stream interno]"}
 
-@app.get("/estado_cerebral")
+@app.get("/estado_cerebral", dependencies=[Depends(verificar_dashboard)])
 def estado_cerebral():
     return {
         "dopamina": round(homeostasis.dopamina, 2),
@@ -857,7 +871,7 @@ def estado_cerebral():
         "en_sueno": homeostasis.en_sueno
     }
 
-@app.get("/dashboard", response_class=HTMLResponse)
+@app.get("/dashboard", response_class=HTMLResponse, dependencies=[Depends(verificar_dashboard)])
 def dashboard():
     html = '''<!DOCTYPE html>
 <html lang="es">
@@ -1000,22 +1014,35 @@ ReactDOM.createRoot(document.getElementById('dashboard-root')).render(<AppContai
 </script>
 
 <script>
-async function enviar(){
-  let el = document.getElementById('inp');
-  let t = el.value.trim();
-  if(!t) return;
-  let c = document.getElementById('chat');
-  c.innerHTML += '<div style="color:#facc15; margin-bottom:4px;">Drako: '+t+'</div>';
-  el.value = '';
-  c.scrollTop = c.scrollHeight;
+function anadirLineaChat(etiqueta, texto, color) {
+  const chat = document.getElementById('chat');
+  const linea = document.createElement('div');
+  linea.style.color = color;
+  linea.style.marginBottom = '4px';
+  linea.textContent = etiqueta + ': ' + String(texto);
+  chat.appendChild(linea);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+async function enviar() {
+  const input = document.getElementById('inp');
+  const texto = input.value.trim();
+  if (!texto) return;
+  input.value = '';
+  anadirLineaChat('Drako', texto, '#facc15');
   try {
-    let r = await fetch('/preguntar?q='+encodeURIComponent(t));
-    let j = await r.json();
-    c.innerHTML += '<div style="color:#22d3ee; margin-bottom:4px;">Lumi: '+j.respuesta+'</div>';
-  } catch(e) {
-    c.innerHTML += '<div style="color:#ef4444; margin-bottom:4px;">[Error de conexión con la corteza]</div>';
+    const respuesta = await fetch('/preguntar', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'same-origin',
+      body: JSON.stringify({q: texto}),
+    });
+    if (!respuesta.ok) throw new Error('HTTP ' + respuesta.status);
+    const datos = await respuesta.json();
+    anadirLineaChat('Lumi', datos.respuesta || '', '#22d3ee');
+  } catch (_error) {
+    anadirLineaChat('Sistema', 'Error de conexión con Lumi', '#ef4444');
   }
-  c.scrollTop = c.scrollHeight;
 }
 </script>
 </body>
@@ -1024,7 +1051,7 @@ async function enviar(){
 
 @app.get("/")
 def root():
-    return {"status": "SISTEMA CEREBRAL CONTINUO ACTIVO", "homeostasis": homeostasis.obtener_estado()}
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     import uvicorn
