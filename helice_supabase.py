@@ -14,6 +14,7 @@ import httpx
 from fastapi import FastAPI, Request, Depends
 from pydantic import BaseModel, Field
 from lumi_desktop_endpoint import crear_router_escritorio
+from lumi_visual_endpoint import crear_router_visual
 from lumi_dashboard_security import verificar_dashboard, verificar_webhook_telegram
 from fastapi.responses import HTMLResponse, JSONResponse
 from supabase import create_client
@@ -807,6 +808,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(crear_router_escritorio(procesar_estimulo_multimodal))
+app.include_router(crear_router_visual(lambda: homeostasis))
 
 @app.post("/telegram/webhook", dependencies=[Depends(verificar_webhook_telegram)])
 async def telegram_webhook(request: Request):
