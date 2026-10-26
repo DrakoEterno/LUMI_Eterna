@@ -9,14 +9,15 @@ import urllib.parse
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request, Depends, HTTPException
 from pydantic import BaseModel, Field
 from lumi_desktop_endpoint import crear_router_escritorio
 from lumi_visual_endpoint import crear_router_visual
 from lumi_dashboard_security import verificar_dashboard, verificar_webhook_telegram
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
 from supabase import create_client
 from google import genai
 from google.genai import types
@@ -807,6 +808,7 @@ async def lifespan(app: FastAPI):
     await guardar_estado_emocional_persistente()
 
 app = FastAPI(lifespan=lifespan)
+PANEL_DIR = Path(__file__).resolve().parent / 'panel'
 app.include_router(crear_router_escritorio(procesar_estimulo_multimodal))
 app.include_router(crear_router_visual(lambda: homeostasis))
 
@@ -873,7 +875,31 @@ def estado_cerebral():
         "en_sueno": homeostasis.en_sueno
     }
 
-@app.get("/dashboard", response_class=HTMLResponse, dependencies=[Depends(verificar_dashboard)])
+# El panel y TODOS sus recursos requieren las mismas credenciales privadas.
+PANEL_ARCHIVOS = {
+    "lumi_panel.html",
+    "unnamed.jpg",
+    "2 (Base luminosa para poner debajo del cristal azul cyan).jpg",
+    "3  (fondo).jpg",
+}
+
+
+@app.get("/panel/{archivo}", dependencies=[Depends(verificar_dashboard)])
+def servir_panel_v7(archivo: str):
+    if archivo not in PANEL_ARCHIVOS:
+        raise HTTPException(status_code=404, detail="Recurso no disponible")
+    ruta = PANEL_DIR / archivo
+    if not ruta.is_file():
+        raise HTTPException(status_code=404, detail="Recurso no encontrado")
+    return FileResponse(ruta, headers={"Cache-Control": "private, no-store"})
+
+
+@app.get("/dashboard", dependencies=[Depends(verificar_dashboard)])
+def dashboard_v7():
+    return RedirectResponse(url="/panel/lumi_panel.html", status_code=302)
+
+
+@app.get("/dashboard-antiguo", response_class=HTMLResponse, dependencies=[Depends(verificar_dashboard)])
 def dashboard():
     html = '''<!DOCTYPE html>
 <html lang="es">
