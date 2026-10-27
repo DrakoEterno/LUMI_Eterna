@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LUMI · Neural Command Center</title>
+<title>LUMI Eterna · Dashboard V8</title>
 <style>
 :root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#caf8ff;background:#020a13;--cyan:#41eaff;--line:#217b90}
 *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 43% 30%,#124057 0,#051727 48%,#020610 90%);overflow-x:hidden}
@@ -47,30 +47,54 @@ textarea{display:block;width:100%;resize:vertical;min-height:100px;max-height:40
 @media(max-width:1150px){.shell{grid-template-columns:190px minmax(300px,1fr) 350px}.side{padding:13px}.stage-title h1{font-size:17px}}
 @media(max-width:880px){.shell{height:auto;min-height:100vh;display:flex;flex-direction:column}.center{height:580px;flex-shrink:0}.side{order:2}.chat{order:3;height:620px}.crystal-scene{width:170px;height:335px}}
 @media(prefers-reduced-motion:reduce){.crystal-scene,.crystal-3d,.crystal:after,.crystal-gloss{animation:none!important}}
+/* V8: nueva escena cinemática, cristal original y controles accesibles */
+:root{--cyan:#4eeaff;--mint:#61f4dc;--line:#1d7083}
+body{background:radial-gradient(ellipse at 45% 10%,#0b2738,#02070f 70%)}
+.shell{grid-template-columns:258px minmax(320px,1fr) minmax(345px,385px);gap:11px;padding:12px}
+.panel{border-color:#326b7b91;background:linear-gradient(140deg,#071b2ae8,#03111feb)}
+.brand{font-size:29px;letter-spacing:.36em}.sidebar-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.brand-gem{font-size:26px;color:#58e8d9;text-shadow:0 0 20px #2cf8dd}
+.nav{display:flex;flex-direction:column;gap:6px}.nav button{display:flex;align-items:center;gap:9px;text-align:left;background:transparent;border:1px solid transparent;border-radius:10px;padding:10px 12px;color:#88b9cb;font-size:12px;letter-spacing:.05em}.nav button:hover,.nav button.selected{background:#0d475461;border-color:#256d7c87;color:#d6ffff}.nav button.selected:before{content:'▸';color:#74f9e1}
+.sidebar-rule{font-size:10px;color:#608ea1;letter-spacing:.2em;margin-top:3px}.module{background:linear-gradient(135deg,#061e2cbb,#04121fd2);border-color:#38788d59}.mod-head{align-items:center;color:#b3f3fa}.mini-action{font-size:10px;border:1px solid #338da19c;border-radius:7px;background:#0d3541;color:#caffff;padding:7px 9px;white-space:nowrap}.mini-action:hover{background:#126077}.monologue{font-size:12px;line-height:1.8;color:#b9e7ef;max-height:225px;overflow-y:auto;white-space:pre-wrap;overflow-wrap:anywhere}.spark{color:#72ffdd}
+.center{border-color:#357b8d;background:#021623;isolation:isolate}.backdrop{background:url('fondo_v8.png') center center/cover no-repeat;opacity:.9;filter:saturate(1.15) brightness(.72);mask-image:none}.backdrop:after{display:none}.center:after{box-shadow:inset 0 0 105px 28px #01101acf;background:linear-gradient(180deg,#011521b8 0,transparent 27%,transparent 74%,#0016246b 100%)}
+.stage-title{top:22px;left:22px;right:22px}.stage-title h1{font-size:20px;letter-spacing:.21em}.stage-title small{letter-spacing:.11em;text-transform:uppercase;font-size:10px;color:#ade2ef}.gallery-control{top:107px;left:20px;right:20px}.gallery-control button{font-weight:700;padding:8px 11px}.stage-foot{bottom:15px;color:#b5f3fa;font-size:9px;text-shadow:0 0 5px #00151f}
+.base{display:none}.halo{z-index:3;top:45%;width:65%;background:radial-gradient(circle,#49ffe92a,transparent 58%);filter:blur(20px)}
+.crystal-scene{top:25%;height:49%;max-height:410px;width:min(31%,240px);min-width:138px;animation:float 5.5s ease-in-out infinite;filter:drop-shadow(0 0 22px #28efdc80)}.crystal-3d{animation:tiltCrystal 11s ease-in-out infinite alternate}.crystal{clip-path:none;background:url('cristal_v8.png') center/contain no-repeat;box-shadow:none}.crystal:before,.crystal:after,.facet,.crystal-gloss{display:none}
+.chat-head{padding:20px 17px}.status{display:flex;align-items:center;gap:5px}.status:before{content:'';height:6px;width:6px;background:#fbb77d;border-radius:50%;box-shadow:0 0 9px #fbb77d}.status.online:before{background:#53ffd9;box-shadow:0 0 9px #53ffd9}
+.message{max-width:100%}.message .who{font-weight:800}.bubble{background:#0a2230de;border-color:#2b718580;line-height:1.68}.mine .bubble{background:linear-gradient(140deg,#0e4051,#0b273b);border-color:#4bacc099}.message-tools{display:flex;gap:7px;margin:7px 0 0;flex-wrap:wrap}.talk-btn{border:1px solid #31798b;border-radius:8px;color:#bdfcff;background:#0c3140;padding:7px 10px;font-size:11px}.talk-btn:hover{background:#12667d}.talk-btn:disabled{opacity:.6;cursor:wait}
+.placeholder{opacity:.85}.thinking{display:inline-flex;gap:5px;vertical-align:middle;margin-left:4px}.thinking span{width:5px;height:5px;border-radius:50%;background:#5ce9f5;animation:blink 1.1s ease-in-out infinite}.thinking span:nth-child(2){animation-delay:.17s}.thinking span:nth-child(3){animation-delay:.34s}@keyframes blink{50%{opacity:.18;transform:translateY(-3px)}}
+.footer-link{margin-top:auto;padding-top:10px;display:flex;gap:8px}.footer-link button{width:100%;padding:10px;background:#072434;border:1px solid #2d7789;color:#9fdaea;border-radius:9px;font-size:11px}
+.chat-head h2{font-size:19px}.composer{padding:12px 15px 15px}textarea{min-height:80px}.notice p{margin-bottom:0}
+@media(max-width:1240px){.shell{grid-template-columns:210px minmax(300px,1fr) 355px}.side{padding:14px}.nav button{padding:9px}}
+@media(max-width:1000px){.shell{height:auto;min-height:100dvh;display:grid;grid-template-columns:minmax(220px,280px) minmax(340px,1fr)}.center{height:650px}.chat{grid-column:1/-1;height:600px}.crystal-scene{top:25%;height:50%}}
+@media(max-width:700px){.shell{display:flex;flex-direction:column;padding:8px;gap:9px}.center{order:1;height:480px;flex-shrink:0}.side{order:2}.chat{order:3;height:620px}.nav{display:grid;grid-template-columns:repeat(3,1fr)}.nav button{justify-content:center;text-align:center;font-size:11px}.crystal-scene{top:27%;width:142px;height:245px}.gallery-control{top:86px;left:12px}.stage-title{left:14px;top:15px}.stage-title h1{font-size:17px}.stage-foot{left:10px;right:10px;font-size:8px}}
 </style>
 </head>
 <body>
 <main class="shell">
 <aside class="panel side" aria-label="Estado de LUMI">
-<div><div class="overline">Cognitive system / 001</div><div class="brand">LUMI</div><div class="overline">Eterna · Neural interface</div></div><div class="line"></div>
-<div class="module"><div class="mod-head"><span>ESTADO CEREBRAL</span><span class="chip" id="state">SIN CONEXIÓN</span></div><div id="metrics"></div></div>
-<div class="module"><div class="mod-head"><span>STREAM DE CONCIENCIA</span><span>◈</span></div><div class="notice" id="stream">Esperando datos del servidor de LUMI…</div></div>
+<div class="sidebar-top"><div><div class="overline">Cognitive system / 008</div><div class="brand">LUMI</div><div class="overline">ETERNA · CONSCIOUS INTERFACE</div></div><span class="brand-gem">◇</span></div><div class="line"></div>
+<div class="sidebar-rule">NAVEGACIÓN</div>
+<nav class="nav" aria-label="Secciones"><button type="button" class="selected" id="nav-core">◈ Núcleo</button><button type="button" id="nav-chat">◉ Conversar</button><button type="button" id="nav-stream">⌁ Monólogo</button></nav>
+<div class="sidebar-rule">ACTIVIDAD NEURONAL EN VIVO</div>
+<div class="module"><div class="mod-head"><span>ESTADO CEREBRAL</span><span class="chip" id="state">CONECTANDO</span></div><div id="metrics"></div></div>
+<div class="module" id="monologue-card"><div class="mod-head"><span>MONÓLOGO INTERNO <span class="spark">✦</span></span><button type="button" class="mini-action" id="speak-stream" title="Escuchar el monólogo de LUMI">▶ Escuchar</button></div><div class="monologue" id="stream">Esperando datos reales del servidor de LUMI…</div></div>
 <div class="module"><div class="mod-head"><span>CONEXIÓN AL SERVIDOR</span></div><div class="notice">Backend: <code>lumi-eterna.onrender.com</code><p id="conn-note">Este panel no modifica ni simula los estados neuronales.</p></div><button class="copy" id="refresh">↻ Actualizar datos</button></div>
-<div class="muted">Valores reales solo cuando el servidor responde correctamente. No se muestran cifras inventadas.</div>
+<div class="muted">Datos reales de la API. La mascota, memoria, voz y homeostasis no se modifican.</div>
+<div class="footer-link"><button type="button" id="logout">↪ Cerrar sesión</button></div>
 </aside>
 <section class="center" aria-label="Escena central de LUMI">
-<div class="backdrop" id="wallpaper"></div><div class="stage-title"><div><small>LUMI / DIGITAL PRESENCE</small><h1>NEURAL CORE</h1><small>Cristal romboide 3D · pulso cian</small></div><span class="chip" id="visual-mode">MODO VISUAL</span></div>
+<div class="backdrop" id="wallpaper"></div><div class="stage-title"><div><small>LUMI / DIGITAL PRESENCE</small><h1>NEURAL CORE</h1><small>Presencia digital · Núcleo cian</small></div><span class="chip" id="visual-mode">V8 EN VIVO</span></div>
 <div class="gallery-control"><button id="choose-bg" type="button">🖼 Cambiar fondo</button><button id="reset-bg" type="button">↺ Fondo original</button><input id="bg-file" type="file" accept="image/*" hidden></div>
 <div class="halo"></div><div class="base"></div>
 <canvas class="helix-layer helix-back" id="helix-back" aria-hidden="true"></canvas>
-<div class="crystal-scene"><div class="crystal-3d"><div class="crystal"><div class="facet"></div><div class="facet right"></div><div class="facet bottom"></div><div class="crystal-gloss"></div></div></div></div>
+<div class="crystal-scene"><div class="crystal-3d"><div class="crystal"></div></div></div>
 <canvas class="helix-layer helix-front" id="helix-front" aria-hidden="true"></canvas>
-<div class="stage-foot"><span>◉ CORE SYNCHRONIZATION</span><span>PLANETARY ORBITS / AZURE FACETED NODES</span></div>
+<div class="stage-foot"><span>◉ CORE SYNCHRONIZATION</span><span>PLANETARY ORBITS · LUMI V8</span></div>
 </section>
 <section class="panel chat" aria-label="Conversación con LUMI">
-<header class="chat-head"><div><div class="overline">Interactive cortex</div><h2>Conversar con LUMI</h2></div><span class="status" id="chat-status">Conexión no verificada</span></header>
-<div class="messages" id="messages" aria-live="polite"><div class="message"><div class="who">Sistema</div><div class="bubble">Bienvenido al panel de LUMI. Puedes redactar mensajes y código extenso. La entrega al servidor depende de que la API permita la conexión.</div></div></div>
-<div class="composer"><div class="tabs"><button class="active" id="tab-msg">Mensaje</button><button id="tab-code">Código largo</button></div><textarea id="input" spellcheck="false" placeholder="Escribe a LUMI… (Ctrl + Enter para enviar)"></textarea><div class="compose-foot"><span class="muted" id="count">0 caracteres</span><button class="send" id="send">ENVIAR ↗</button></div><div class="muted" style="margin-top:8px">Mensajes y código se envían por POST privado (máximo 4.000 caracteres por mensaje en el servidor actual).</div></div>
+<header class="chat-head"><div><div class="overline">Interactive cortex / V8</div><h2>Conversar con LUMI</h2></div><span class="status" id="chat-status">Conectando</span></header>
+<div class="messages" id="messages" aria-live="polite"><div class="message"><div class="who">LUMI · SISTEMA</div><div class="bubble">Hola, Drako. Mi interfaz está lista. Puedes escribirme aquí y escuchar mis respuestas cuando quieras. ✦</div></div></div>
+<div class="composer"><div class="tabs"><button type="button" class="active" id="tab-msg">Mensaje</button><button type="button" id="tab-code">Código largo</button></div><textarea id="input" spellcheck="false" maxlength="4000" placeholder="Escribe a LUMI… (Ctrl + Enter para enviar)"></textarea><div class="compose-foot"><span class="muted" id="count">0 / 4.000</span><button type="button" class="send" id="send">ENVIAR ↗</button></div><div class="muted" style="margin-top:8px">Tu mensaje aparece al instante. La respuesta puede tardar mientras el cerebro de LUMI procesa la conversación.</div></div>
 </section>
 </main>
 <script>
@@ -88,7 +112,7 @@ $('bg-file').addEventListener('change',event=>{
 });
 $('reset-bg').addEventListener('click',()=>{
   $('wallpaper').style.backgroundImage='';
-  $('visual-mode').textContent='MODO VISUAL';
+  $('visual-mode').textContent='V8 EN VIVO';
   if(galleryObjectURL){URL.revokeObjectURL(galleryObjectURL);galleryObjectURL=null;}
 });
 // Órbitas planetarias proyectadas en 3D, separadas en capas trasera y delantera.
@@ -163,6 +187,9 @@ let helixStart=performance.now();
 function animateHelix(now){renderHelix((now-helixStart)/1000);if(!reducedMotion)requestAnimationFrame(animateHelix);}
 requestAnimationFrame(animateHelix);
 if(reducedMotion)window.addEventListener('resize',()=>renderHelix(0));
+</script>
+<script src="v8.js" defer></script>
+<script type="application/x-legacy" data-obsolete-v7>
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function paint(data){$('metrics').innerHTML=Object.entries(labels).map(([key,label])=>{const n=Number(data[key]);return '<div class="metric"><span>'+label+'</span><b>'+(Number.isFinite(n)?n.toFixed(2):'—')+'</b></div><div class="bar"><i style="width:'+(Number.isFinite(n)?Math.min(100,Math.max(0,n*100)):0)+'%"></i></div>'}).join('');$('state').textContent=data.estado||'SIN DATOS';$('stream').textContent=data.stream_conciencia||'No disponible';}
 paint({});
