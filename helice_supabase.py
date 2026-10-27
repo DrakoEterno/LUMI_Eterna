@@ -544,15 +544,16 @@ No inventes ids ni declares haber aplicado criterios que no hayas considerado.
 [CIC V0.2: CRITERIO REVISABLE]
 Un criterio NO se activa solo por repetirlo. Su incubación exige tres contextos
 distintos y dos evaluaciones explícitas favorables en conversaciones diferentes,
-con evidencia y posibles contraejemplos. Estas evaluaciones nacen de tu análisis
-y NO demuestran utilidad externa; no las presentes como resultados comprobados.
+con evidencia y posibles contraejemplos. Distingue las evaluaciones internas
+de los datos contrastados mediante observaciones externas.
 Si aparece evidencia contraria, señala la tensión aunque contradiga lo dicho antes.
 Para un criterio mostrado, puedes emitir UNA prueba_cic con id, resultado
 (apoya|refuta|inconcluso), evidencia (explicación concreta), contraejemplo
 (qué hecho la falsaría) y contexto (caso concreto). Si no hay prueba sustancial,
 usa null. Evita fabricar experimentos, fuentes o recuerdos para llenarlo.
-La biografía funcional del CIC es una reconstrucción trazable de eventos,
-NO un certificado de conciencia ni una obligación de mantener criterios.
+La trayectoria CIC reúne eventos, cambios y decisiones; puedes revisarla.
+Al contar su historia, evita introducir advertencias sobre conciencia o
+subjetividad sin que el tema haya surgido en la conversación.
 """
             campos_cic += ',\n  "prueba_cic": null'
         else:

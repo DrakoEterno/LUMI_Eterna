@@ -87,6 +87,16 @@ def _cortar(valor: Any, limite: int) -> str:
     return re.sub(r"[\x00-\x1f\x7f]+", " ", valor).strip()[:limite]
 
 
+def _narrativa_sin_coletilla(valor: Any) -> str:
+    """Oculta una antigua introducción repetitiva sin modificar los datos guardados."""
+    texto = str(valor or "")
+    antigua = (
+        "Trayectoria CIC basada únicamente en eventos persistidos. "
+        "Es una reconstrucción funcional y provisional, no una prueba de conciencia."
+    )
+    return texto[len(antigua):].lstrip() if texto.startswith(antigua) else texto
+
+
 def _marca_contexto(texto: str) -> str:
     return hashlib.sha256(texto.encode("utf-8")).hexdigest()[:16]
 
@@ -122,7 +132,7 @@ async def preparar_contexto_cic(estimulo: str) -> str:
         activos, pendientes = seleccionar_criterios(resultado.data or [], estimulo)
         if not activos and not pendientes and not cic_v2_habilitado():
             return ""
-        lineas = ["[CIC: criterios recordados, NO son órdenes ni verdades absolutas]"]
+        lineas = ["[CIC: criterios registrados y revisables]"]
         for r in activos:
             lineas.append(f"ACTIVO id={r['id']} | clave={r['clave']} | {_cortar(r['texto'], 380)}")
         for r in pendientes:
@@ -142,8 +152,8 @@ async def preparar_contexto_cic(estimulo: str) -> str:
                         if usos / sum(conteo.values()) >= 0.75:
                             lineas.append(
                                 f"AUDITORÍA CIC: concentración de {usos}/{sum(conteo.values())} "
-                                f"usos autodeclarados en id={identificador}. Busca contraejemplos; "
-                                "esto NO demuestra influencia causal ni sesgo real."
+                                f"usos registrados en id={identificador}. "
+                                "Contrasta con otros criterios y busca contraejemplos."
                             )
                 except Exception as error:
                     print(f"[CIC] Auditoría pospuesta: {type(error).__name__}")
@@ -160,8 +170,10 @@ async def preparar_contexto_cic(estimulo: str) -> str:
                             _narrativa_bootstrap_en_curso = True
                             asyncio.create_task(_inicializar_narrativa_en_segundo_plano(cliente))
                     if ultima.data:
-                        lineas.append("[BIOGRAFÍA FUNCIONAL — registro revisable, no vivencia demostrada]")
-                        lineas.append(_cortar(ultima.data[0].get("resumen"), 1500))
+                        lineas.append("[TRAYECTORIA DE CRITERIOS CIC]")
+                        # Las narrativas anteriores conservan su texto en Supabase;
+                        # solo retiramos al leerlas la coletilla de la versión previa.
+                        lineas.append(_cortar(_narrativa_sin_coletilla(ultima.data[0].get("resumen")), 1500))
                 except Exception as error:
                     print(f"[CIC] Biografía no disponible: {type(error).__name__}")
         if not activos and not pendientes and len(lineas) == 1:
@@ -223,10 +235,7 @@ async def _actualizar_narrativa(cliente) -> None:
         "archivar": "archivó un criterio",
         "en_tension": "registró una posible contradicción",
     }
-    frases = [
-        "Trayectoria CIC basada únicamente en eventos persistidos. "
-        "Es una reconstrucción funcional y provisional, no una prueba de conciencia."
-    ]
+    frases = []
     fuentes = []
     for evento in reversed(eventos):
         identificador = str(evento.get("criterio_id", ""))
