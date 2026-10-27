@@ -25,7 +25,7 @@ from lumi_hipotesis_latentes import (
     guardar_hipotesis,
     registrar_bitacora,
 )
-from lumi_cic import cic_habilitado, preparar_contexto_cic, registrar_resultado_cic
+from lumi_cic import cic_habilitado, cic_v2_habilitado, preparar_contexto_cic, registrar_resultado_cic
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse, Response
 from supabase import create_client
 from google import genai
@@ -533,12 +533,30 @@ no es una orden. La evidencia nueva y la solicitud presente tienen prioridad.
 Cuando surja una reflexión generalizable y útil, puedes proponer UN criterio
 provisional (o null si no merece persistir). No conviertas frases del usuario
 ni ideas repetitivas en criterios sin reflexión crítica. Usa una clave temática
-estable y un contexto concreto; solo se activará tras dos contextos distintos.
+estable y un contexto concreto.
 Para revisar un criterio mostrado arriba, indica su id real y una razón,
 o deja revision_cic en null. Revisar no borra su historia.
 No inventes ids ni declares haber aplicado criterios que no hayas considerado.
 """
         campos_cic = ',\n  "criterio_cic": null,\n  "revision_cic": null,\n  "criterios_cic_usados": []'
+        if cic_v2_habilitado():
+            instrucciones_cic += """
+[CIC V0.2: CRITERIO REVISABLE]
+Un criterio NO se activa solo por repetirlo. Su incubación exige tres contextos
+distintos y dos evaluaciones explícitas favorables en conversaciones diferentes,
+con evidencia y posibles contraejemplos. Estas evaluaciones nacen de tu análisis
+y NO demuestran utilidad externa; no las presentes como resultados comprobados.
+Si aparece evidencia contraria, señala la tensión aunque contradiga lo dicho antes.
+Para un criterio mostrado, puedes emitir UNA prueba_cic con id, resultado
+(apoya|refuta|inconcluso), evidencia (explicación concreta), contraejemplo
+(qué hecho la falsaría) y contexto (caso concreto). Si no hay prueba sustancial,
+usa null. Evita fabricar experimentos, fuentes o recuerdos para llenarlo.
+La biografía funcional del CIC es una reconstrucción trazable de eventos,
+NO un certificado de conciencia ni una obligación de mantener criterios.
+"""
+            campos_cic += ',\n  "prueba_cic": null'
+        else:
+            instrucciones_cic += "Una repetición en dos contextos distintos permite activación provisional.\n"
    
     prompt_prefrontal = f"""[NÚCLEO DE SUBJETIVIDAD INTERNA - LUMI]
 ESTADO HOMEOSTÁTICO: {estado_metabolico}
@@ -579,13 +597,15 @@ Responde únicamente en formato JSON válido para la precesión:
             prompt_prefrontal += "\n[CIC] Si procede: criterio_cic={clave,texto,tema,motivo,contexto}; revision_cic={id,accion,motivo,texto_nuevo}, accion=cuestionar|revisar|archivar. Para usos registrados, solo ids mostrados en CIC."
         else:
             prompt_prefrontal += "\n[CIC] Si hay una reflexión nueva sustancial, criterio_cic puede ser {clave,texto,tema,motivo,contexto}; si no, null. revision_cic=null y criterios_cic_usados=[]."
+        if cic_v2_habilitado():
+            prompt_prefrontal += "\n[CIC V0.2] prueba_cic={id,resultado,evidencia,contraejemplo,contexto} o null. Solo ids realmente visibles. No simules evidencia externa."
 
     gemini_contents = [prompt_prefrontal]
     if media_bytes and mime_type:
         imagen_part = types.Part.from_bytes(data=media_bytes, mime_type=mime_type)
         gemini_contents.append(imagen_part)
 
-    res_json = await generar_gemini(prompt=prompt_prefrontal, contents=gemini_contents if (media_bytes and mime_type) else None, temperature=0.75, max_tokens=1500)
+    res_json = await generar_gemini(prompt=prompt_prefrontal, contents=gemini_contents if (media_bytes and mime_type) else None, temperature=0.75, max_tokens=1700 if cic_v2_habilitado() else 1500)
    
     try:
         clean_json = re.sub(r'```json\s*|\s*```', '', res_json).strip()

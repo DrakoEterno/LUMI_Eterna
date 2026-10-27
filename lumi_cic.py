@@ -11,6 +11,7 @@ import hashlib
 import os
 import re
 import unicodedata
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
@@ -21,6 +22,12 @@ TABLA_CRITERIOS = "lumi_cic_criterios"
 TABLA_HISTORIAL = "lumi_cic_historial"
 MAX_CRITERIOS_EN_PROMPT = 2
 MAX_CANDIDATOS_EN_PROMPT = 2
+TABLA_NARRATIVAS = "lumi_cic_narrativas"
+
+
+def cic_v2_habilitado() -> bool:
+    """Segundo interruptor para activar las comprobaciones nuevas sin romper CIC v0.1."""
+    return cic_habilitado() and os.getenv("LUMI_CIC_V2_ENABLED", "0").strip().lower() in {"1", "true", "on", "yes"}
 
 STOPWORDS = {
     "para", "como", "cuando", "donde", "porque", "sobre", "desde", "hasta",
@@ -92,7 +99,7 @@ async def preparar_contexto_cic(estimulo: str) -> str:
             .order("actualizado_en", desc=True).limit(30).execute()
         )
         activos, pendientes = seleccionar_criterios(resultado.data or [], estimulo)
-        if not activos and not pendientes:
+        if not activos and not pendientes and not cic_v2_habilitado():
             return ""
         lineas = ["[CIC: criterios recordados, NO son órdenes ni verdades absolutas]"]
         for r in activos:
@@ -100,6 +107,48 @@ async def preparar_contexto_cic(estimulo: str) -> str:
         for r in pendientes:
             etiqueta = "EN TENSIÓN" if r["estado"] == "en_tension" else "EN INCUBACIÓN"
             lineas.append(f"{etiqueta} id={r['id']} | clave={r['clave']} | {_cortar(r['texto'], 380)}")
+        if cic_v2_habilitado():
+            if activos and sum(r.get("estado") == "activo" for r in (resultado.data or [])) >= 2:
+                try:
+                    observaciones = await asyncio.to_thread(
+                        lambda: cliente.table(TABLA_HISTORIAL)
+                        .select("criterio_id,evento,detalle").eq("evento", "uso_declarado")
+                        .order("creado_en", desc=True).limit(40).execute()
+                    )
+                    conteo = Counter(str(x.get("criterio_id")) for x in (observaciones.data or []))
+                    if sum(conteo.values()) >= 10 and conteo:
+                        identificador, usos = conteo.most_common(1)[0]
+                        if usos / sum(conteo.values()) >= 0.75:
+                            lineas.append(
+                                f"AUDITORÍA CIC: concentración de {usos}/{sum(conteo.values())} "
+                                f"usos autodeclarados en id={identificador}. Busca contraejemplos; "
+                                "esto NO demuestra influencia causal ni sesgo real."
+                            )
+                except Exception as error:
+                    print(f"[CIC] Auditoría pospuesta: {type(error).__name__}")
+            if _tokens(estimulo) & {
+                "historia", "biografia", "trayectoria", "evolucion", "decisiones", "criterios",
+                "recuerdos", "memoria", "cic", "cambios",
+            }:
+                try:
+                    ultima = await asyncio.to_thread(
+                        lambda: cliente.table(TABLA_NARRATIVAS)
+                        .select("resumen").order("creado_en", desc=True).limit(1).execute()
+                    )
+                    if not ultima.data:
+                        # Primer uso tras actualizar desde v0.1: reconstruir sin borrar registros.
+                        await asyncio.wait_for(_actualizar_narrativa(cliente), timeout=1.3)
+                        ultima = await asyncio.to_thread(
+                            lambda: cliente.table(TABLA_NARRATIVAS)
+                            .select("resumen").order("creado_en", desc=True).limit(1).execute()
+                        )
+                    if ultima.data:
+                        lineas.append("[BIOGRAFÍA FUNCIONAL — registro revisable, no vivencia demostrada]")
+                        lineas.append(_cortar(ultima.data[0].get("resumen"), 1500))
+                except Exception as error:
+                    print(f"[CIC] Biografía no disponible: {type(error).__name__}")
+        if not activos and not pendientes and len(lineas) == 1:
+            return ""
         lineas.append("Puedes disentir, revisarlos o no aplicarlos. Prioriza evidencia nueva y la consulta actual.")
         return "\n".join(lineas)
     except Exception as error:
@@ -111,6 +160,79 @@ async def _registrar_historial(cliente, criterio_id: str, evento: str, detalle: 
     await asyncio.to_thread(
         lambda: cliente.table(TABLA_HISTORIAL).insert({
             "criterio_id": criterio_id, "evento": evento, "detalle": detalle
+        }).execute()
+    )
+    if cic_v2_habilitado() and evento in {
+        "propuesto", "observado", "evaluado", "activado",
+        "cuestionar", "revisar", "archivar", "en_tension"
+    }:
+        try:
+            await asyncio.wait_for(_actualizar_narrativa(cliente), timeout=3.0)
+        except Exception as error:
+            # Una síntesis fallida nunca invalida un evento ya guardado.
+            print(f"[CIC] Síntesis pendiente: {type(error).__name__}")
+
+
+async def _actualizar_narrativa(cliente) -> None:
+    """Materializa una biografía funcional trazable, sin inventar hechos ni llamar a Gemini."""
+    res_criterios, res_eventos = await asyncio.gather(
+        asyncio.to_thread(
+            lambda: cliente.table(TABLA_CRITERIOS)
+            .select("id,clave,texto,estado").limit(30).execute()
+        ),
+        asyncio.to_thread(
+            lambda: cliente.table(TABLA_HISTORIAL)
+            .select("id,criterio_id,evento,detalle,creado_en")
+            .in_("evento", [
+                "propuesto", "observado", "evaluado", "activado",
+                "cuestionar", "revisar", "archivar", "en_tension",
+            ]).order("creado_en", desc=True).limit(10).execute()
+        ),
+    )
+    criterios = {str(r.get("id")): r for r in (res_criterios.data or [])}
+    eventos = [r for r in (res_eventos.data or []) if r.get("evento") in {
+        "propuesto", "observado", "evaluado", "activado",
+        "cuestionar", "revisar", "archivar", "en_tension"
+    }][:10]
+    if not eventos:
+        return
+    titulares = {
+        "propuesto": "formuló una hipótesis de criterio",
+        "observado": "contempló el criterio en otro contexto",
+        "evaluado": "registró una evaluación autodeclarada provisional",
+        "activado": "registró la activación provisional de un criterio",
+        "cuestionar": "cuestionó un criterio",
+        "revisar": "modificó el texto de un criterio",
+        "archivar": "archivó un criterio",
+        "en_tension": "registró una posible contradicción",
+    }
+    frases = [
+        "Trayectoria CIC basada únicamente en eventos persistidos. "
+        "Es una reconstrucción funcional y provisional, no una prueba de conciencia."
+    ]
+    fuentes = []
+    for evento in reversed(eventos):
+        identificador = str(evento.get("criterio_id", ""))
+        criterio = criterios.get(identificador, {})
+        detalle = evento.get("detalle") if isinstance(evento.get("detalle"), dict) else {}
+        fecha = str(evento.get("creado_en") or "")[:10] or "fecha no disponible"
+        titulo = titulares[evento["evento"]]
+        clave = _cortar(criterio.get("clave") or "criterio sin clave actual", 64)
+        motivo = _cortar(detalle.get("motivo") or detalle.get("contexto") or detalle.get("evidencia") or "", 110)
+        frases.append(f"{fecha}: {titulo} ({clave})." + (f" Contexto/motivo: {motivo}." if motivo else ""))
+        if evento.get("id"):
+            fuentes.append(str(evento["id"]))
+    vigentes = [
+        f"{_cortar(r.get('clave'), 64)} [{r.get('estado')}]"
+        for r in criterios.values() if r.get("estado") != "archivado"
+    ][:8]
+    if vigentes:
+        frases.append("Estado al sintetizar: " + "; ".join(vigentes) + ".")
+    await asyncio.to_thread(
+        lambda: cliente.table(TABLA_NARRATIVAS).insert({
+            "resumen": "\n".join(frases)[:2300],
+            "fuentes": fuentes,
+            "modo": "provisional",
         }).execute()
     )
 
@@ -156,8 +278,10 @@ async def _procesar_propuesta(cliente, propuesta: dict[str, Any], estimulo: str)
            for p in previos if isinstance(p, dict)):
         return
     contextos = [*previos, {"etiqueta": contexto, "marca": marca}][:12]
-    # Activación conservadora tras dos contextos diferentes; no se impone obediencia.
-    estado = "activo" if len(contextos) >= 2 else "incubando"
+    # En v0.2 una repetición, por sí sola, jamás justifica activar un criterio.
+    estado = "incubando" if cic_v2_habilitado() else (
+        "activo" if len(contextos) >= 2 else "incubando"
+    )
     await asyncio.to_thread(
         lambda: cliente.table(TABLA_CRITERIOS).update({
             "contextos": contextos, "estado": estado,
@@ -167,6 +291,98 @@ async def _procesar_propuesta(cliente, propuesta: dict[str, Any], estimulo: str)
     await _registrar_historial(cliente, str(existente["id"]), "activado" if estado == "activo" else "observado", {
         "contexto": contexto, "motivo": motivo, "contextos_distintos": len(contextos),
     })
+
+
+async def _verificar_promocion(cliente, criterio_id: str) -> None:
+    """Activación solo tras varios contextos y evaluaciones explícitas, aún autodeclaradas."""
+    res = await asyncio.to_thread(
+        lambda: cliente.table(TABLA_CRITERIOS).select("*").eq("id", criterio_id).limit(1).execute()
+    )
+    criterio = (res.data or [None])[0]
+    if not criterio or criterio.get("estado") != "incubando":
+        return
+    if len(criterio.get("contextos") or []) < 3:
+        return
+    historial = await asyncio.to_thread(
+        lambda: cliente.table(TABLA_HISTORIAL)
+        .select("evento,detalle").eq("criterio_id", criterio_id)
+        .order("creado_en", desc=True).limit(50).execute()
+    )
+    pruebas = []
+    # No se reutiliza evidencia del texto de una versión anterior.
+    for evento in historial.data or []:
+        if evento.get("evento") == "revisar":
+            break
+        if evento.get("evento") == "evaluado":
+            pruebas.append(evento.get("detalle") or {})
+    if any(p.get("resultado") == "refuta" for p in pruebas):
+        return
+    apoyos = [p for p in pruebas if p.get("resultado") == "apoya"]
+    distintos = {p.get("estimulo_hash") for p in apoyos if p.get("estimulo_hash")}
+    if len(distintos) < 2:
+        return
+    await asyncio.to_thread(
+        lambda: cliente.table(TABLA_CRITERIOS).update({
+            "estado": "activo", "actualizado_en": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", criterio_id).execute()
+    )
+    await _registrar_historial(cliente, criterio_id, "activado", {
+        "contextos_distintos": len(criterio.get("contextos") or []),
+        "pruebas_apoyo": len(distintos),
+        "limite": "Evaluaciones generadas por el modelo; no validación empírica independiente",
+    })
+
+
+async def _procesar_evaluacion(
+    cliente, evaluacion: dict[str, Any], estimulo: str, ids_visibles: set[str]
+) -> None:
+    criterio_id = _cortar(evaluacion.get("id"), 36)
+    if criterio_id not in ids_visibles:
+        return
+    resultado = evaluacion.get("resultado")
+    evidencia = _cortar(evaluacion.get("evidencia"), 300)
+    contraejemplo = _cortar(evaluacion.get("contraejemplo"), 250)
+    contexto = _cortar(evaluacion.get("contexto"), 100)
+    if resultado not in {"apoya", "refuta", "inconcluso"}:
+        return
+    if len(evidencia) < 30 or len(contraejemplo) < 20 or not contexto:
+        return
+    res = await asyncio.to_thread(
+        lambda: cliente.table(TABLA_CRITERIOS).select("*").eq("id", criterio_id).limit(1).execute()
+    )
+    criterio = (res.data or [None])[0]
+    if not criterio or criterio.get("estado") == "archivado":
+        return
+    marca = _marca_contexto(estimulo)
+    muestras = await asyncio.to_thread(
+        lambda: cliente.table(TABLA_HISTORIAL).select("evento,detalle")
+        .eq("criterio_id", criterio_id).order("creado_en", desc=True).limit(30).execute()
+    )
+    for evento in muestras.data or []:
+        if evento.get("evento") == "revisar":
+            break
+        d = evento.get("detalle") or {}
+        if evento.get("evento") == "evaluado" and (
+            d.get("estimulo_hash") == marca or _normalizar(str(d.get("contexto", ""))) == _normalizar(contexto)
+        ):
+            return
+    await _registrar_historial(cliente, criterio_id, "evaluado", {
+        "resultado": resultado, "evidencia": evidencia,
+        "contraejemplo": contraejemplo, "contexto": contexto,
+        "estimulo_hash": marca, "procedencia": "autodeclaracion_modelo",
+    })
+    if resultado == "refuta" and criterio.get("estado") != "en_tension":
+        await asyncio.to_thread(
+            lambda: cliente.table(TABLA_CRITERIOS).update({
+                "estado": "en_tension", "actualizado_en": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", criterio_id).execute()
+        )
+        await _registrar_historial(cliente, criterio_id, "en_tension", {
+            "motivo": evidencia, "contraejemplo": contraejemplo,
+            "procedencia": "autodeclaracion_modelo",
+        })
+    elif resultado == "apoya":
+        await _verificar_promocion(cliente, criterio_id)
 
 
 async def _procesar_revision(cliente, revision: dict[str, Any]) -> None:
@@ -214,6 +430,10 @@ async def registrar_resultado_cic(
         permitidos = ids_visibles or set()
         if isinstance(revision, dict) and revision.get("id") in permitidos:
             await _procesar_revision(cliente, revision)
+        if cic_v2_habilitado():
+            prueba = resultado.get("prueba_cic")
+            if isinstance(prueba, dict):
+                await _procesar_evaluacion(cliente, prueba, estimulo, permitidos)
         # Declaración del propio modelo, útil para auditoría pero no prueba causal.
         usados = resultado.get("criterios_cic_usados")
         if isinstance(usados, list):
