@@ -16,8 +16,11 @@ from fastapi import FastAPI, Request, Depends, HTTPException
 from pydantic import BaseModel, Field
 from lumi_desktop_endpoint import crear_router_escritorio
 from lumi_visual_endpoint import crear_router_visual
-from lumi_dashboard_security import verificar_dashboard, verificar_webhook_telegram
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
+from lumi_dashboard_security import (
+    COOKIE, verificar_dashboard, verificar_webhook_telegram,
+    comprobar_password, crear_sesion, tiene_sesion, validar_origen, cookie_segura,
+)
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse, Response
 from supabase import create_client
 from google import genai
 from google.genai import types
@@ -854,6 +857,66 @@ class PreguntaDashboard(BaseModel):
     q: str = Field(min_length=1, max_length=4000)
 
 
+class AccesoDashboard(BaseModel):
+    password: str = Field(min_length=1, max_length=512)
+    recordar: bool = False
+
+
+class TextoVozDashboard(BaseModel):
+    texto: str = Field(min_length=1, max_length=2500)
+
+
+@app.post("/dashboard/login")
+def login_dashboard(datos: AccesoDashboard, request: Request):
+    validar_origen(request)
+    if not comprobar_password(request, datos.password):
+        raise HTTPException(status_code=401, detail="Contraseña incorrecta")
+    token, max_age = crear_sesion(recordar=datos.recordar)
+    response = JSONResponse({"ok": True})
+    response.set_cookie(
+        key=COOKIE, value=token, httponly=True, secure=cookie_segura(request),
+        samesite="lax", max_age=max_age, path="/",
+    )
+    return response
+
+
+@app.post("/dashboard/logout")
+def logout_dashboard(request: Request):
+    validar_origen(request)
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(COOKIE, path="/")
+    return response
+
+
+@app.get("/dashboard/session")
+def sesion_dashboard(request: Request):
+    return {"autenticado": tiene_sesion(request)}
+
+
+@app.post("/dashboard/voz", dependencies=[Depends(verificar_dashboard)])
+async def reproducir_voz_dashboard(datos: TextoVozDashboard, request: Request):
+    validar_origen(request)
+    # La voz ya utilizada por LUMI para Telegram, sin cambiar su cerebro.
+    comunicador = edge_tts.Communicate(datos.texto, "es-ES-ElviraNeural")
+    audio_bytes = bytearray()
+    try:
+        async for parte in comunicador.stream():
+            if parte["type"] == "audio":
+                audio_bytes.extend(parte["data"])
+                if len(audio_bytes) > 10_000_000:
+                    raise HTTPException(status_code=413, detail="Audio demasiado largo")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=502, detail="La voz no está disponible ahora mismo")
+    if not audio_bytes:
+        raise HTTPException(status_code=502, detail="No se recibió audio")
+    return Response(
+        bytes(audio_bytes), media_type="audio/mpeg",
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 @app.post("/preguntar", dependencies=[Depends(verificar_dashboard)])
 async def preguntar(datos: PreguntaDashboard):
     respuesta, _ = await procesar_estimulo_multimodal(datos.q, origen="dashboard")
@@ -875,28 +938,38 @@ def estado_cerebral():
         "en_sueno": homeostasis.en_sueno
     }
 
-# El panel y TODOS sus recursos requieren las mismas credenciales privadas.
+# Los fondos son decorativos; el contenido, cerebro y chat siguen privados.
 PANEL_ARCHIVOS = {
     "lumi_panel.html",
+    "login.html",
+    "v8.js",
+    "fondo_v8.png",
+    "cristal_v8.png",
     "unnamed.jpg",
     "2 (Base luminosa para poner debajo del cristal azul cyan).jpg",
     "3  (fondo).jpg",
 }
 
 
-@app.get("/panel/{archivo}", dependencies=[Depends(verificar_dashboard)])
-def servir_panel_v7(archivo: str):
+@app.get("/panel/{archivo}")
+def servir_panel_v8(archivo: str, request: Request):
     if archivo not in PANEL_ARCHIVOS:
         raise HTTPException(status_code=404, detail="Recurso no disponible")
+    if archivo not in {"login.html", "fondo_v8.png", "cristal_v8.png"}:
+        verificar_dashboard(request)
     ruta = PANEL_DIR / archivo
     if not ruta.is_file():
         raise HTTPException(status_code=404, detail="Recurso no encontrado")
-    return FileResponse(ruta, headers={"Cache-Control": "private, no-store"})
+    return FileResponse(
+        ruta,
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
-@app.get("/dashboard", dependencies=[Depends(verificar_dashboard)])
-def dashboard_v7():
-    return RedirectResponse(url="/panel/lumi_panel.html", status_code=302)
+@app.get("/dashboard")
+def dashboard_v8(request: Request):
+    destino = "/panel/lumi_panel.html" if tiene_sesion(request) else "/panel/login.html"
+    return RedirectResponse(url=destino, status_code=302, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/dashboard-antiguo", response_class=HTMLResponse, dependencies=[Depends(verificar_dashboard)])
