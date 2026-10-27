@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#04121c">
+<title>LUMI · Acceso privado</title>
+<style>
+:root{font-family:Inter,'Segoe UI',Arial,sans-serif;color:#e0fbff;color-scheme:dark}*{box-sizing:border-box}
+body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px;background:#020c17;overflow:hidden}
+.wall{position:fixed;inset:0;background:linear-gradient(180deg,#00101fd9,#01101a8c 55%,#00101ef5),url('fondo_v8.png') 50% 50%/cover;filter:blur(6px) saturate(1.15);transform:scale(1.05)}
+.grid{position:fixed;inset:0;opacity:.23;background-image:linear-gradient(#68c7d71b 1px,transparent 1px),linear-gradient(90deg,#68c7d71b 1px,transparent 1px);background-size:56px 56px;mask-image:linear-gradient(transparent,#000)}
+.card{position:relative;z-index:1;width:min(100%,430px);padding:39px 35px 31px;border:1px solid #5ce7f667;border-radius:20px;box-shadow:0 30px 90px #000d,0 0 65px #00cbec1b,inset 0 0 40px #0ad8e710;background:linear-gradient(145deg,#071d30f5,#03101eef);backdrop-filter:blur(18px)}
+.symbol{margin:auto;width:68px;height:68px;display:grid;place-items:center;border:1px solid #50fdff83;border-radius:17px;background:#062a39;color:#7fffea;font-size:38px;box-shadow:0 0 35px #25ffda33;transform:rotate(45deg)}.symbol span{transform:rotate(-45deg)}
+h1{text-align:center;letter-spacing:.34em;font-size:31px;margin:30px 0 5px;color:#caffff;text-shadow:0 0 25px #46e5ff55}
+.sub{text-align:center;color:#91b9c9;font-size:11px;letter-spacing:.24em;text-transform:uppercase;margin:0 0 29px}
+label{font-size:12px;color:#9be2f2;letter-spacing:.08em}.field{display:flex;align-items:center;gap:5px;background:#041522;border:1px solid #347f96;border-radius:10px;margin-top:9px;overflow:hidden;transition:border-color .2s}.field:focus-within{border-color:#5af6ef;box-shadow:0 0 0 3px #23ecec18}
+input[type=password],input[type=text]{width:100%;min-width:0;border:0;background:transparent;color:#ebfcff;outline:none;padding:15px;font:inherit;font-size:16px}
+.eye{background:none;border:0;color:#88cbd8;padding:8px 12px;cursor:pointer;font-size:12px}
+.remember{display:flex;gap:10px;align-items:center;margin:19px 0 22px;letter-spacing:0;color:#a9d7e3;cursor:pointer}.remember input{accent-color:#30d7ef;width:17px;height:17px}
+.submit{width:100%;padding:15px;background:linear-gradient(110deg,#64f8ee,#16b8e9);border:0;color:#032030;font-weight:800;letter-spacing:.18em;border-radius:10px;cursor:pointer;box-shadow:0 9px 35px #14cbdf39}.submit:hover{filter:brightness(1.13)}.submit:disabled{opacity:.65;cursor:wait}
+.error{min-height:20px;margin:12px 0 0;color:#ffb1a4;font-size:12px;text-align:center}.footer{text-align:center;border-top:1px solid #27718460;margin-top:19px;padding-top:18px;color:#7097a9;font-size:11px;line-height:1.6}
+@media(max-width:490px){.card{padding:35px 22px 25px}h1{font-size:29px}}@media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wall" aria-hidden="true"></div><div class="grid" aria-hidden="true"></div>
+<main class="card">
+<div class="symbol" aria-hidden="true"><span>◇</span></div>
+<h1>LUMI</h1><p class="sub">Eterna · Secure Neural Access</p>
+<form id="login-form" autocomplete="on">
+<label for="password">CONTRASEÑA DE ACCESO</label>
+<div class="field"><input type="password" id="password" name="password" autocomplete="current-password" placeholder="Introduce tu contraseña" required><button class="eye" id="show" type="button" aria-label="Mostrar contraseña">VER</button></div>
+<label class="remember"><input id="remember" type="checkbox"> Mantener sesión iniciada durante 30 días</label>
+<button class="submit" id="access" type="submit">ENTRAR AL NÚCLEO ↗</button>
+<p id="error" class="error" role="alert" aria-live="polite"></p>
+</form>
+<div class="footer">Acceso privado · Tu cerebro, memoria y homeostasis siguen protegidos.<br>Esta página no se recarga mientras escribes.</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+$('show').onclick=()=>{const visible=$('password').type==='text';$('password').type=visible?'password':'text';$('show').textContent=visible?'VER':'OCULTAR';};
+$('login-form').addEventListener('submit',async e=>{
+ e.preventDefault();const btn=$('access');btn.disabled=true;btn.textContent='COMPROBANDO…';$('error').textContent='';
+ try{
+  const r=await fetch('/dashboard/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('password').value,recordar:$('remember').checked})});
+  if(!r.ok){let detail='No se pudo entrar.';try{detail=(await r.json()).detail||detail}catch{}throw Error(detail)}
+  $('password').value='';window.location.replace('/dashboard');
+ }catch(error){$('error').textContent=error.message||'Error de conexión';btn.disabled=false;btn.textContent='ENTRAR AL NÚCLEO ↗';}
+});
+// Esta petición opcional no modifica los campos del formulario.
+fetch('/dashboard/session',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).then(d=>{if(d?.autenticado)window.location.replace('/dashboard')}).catch(()=>{});
+</script>
+</body>
+</html>
