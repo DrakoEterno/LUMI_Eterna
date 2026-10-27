@@ -25,6 +25,7 @@ from lumi_hipotesis_latentes import (
     guardar_hipotesis,
     registrar_bitacora,
 )
+from lumi_cic import cic_habilitado, preparar_contexto_cic, registrar_resultado_cic
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse, Response
 from supabase import create_client
 from google import genai
@@ -512,10 +513,32 @@ async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_byte
    
     ram_cognitiva.agregar(f"Estímulo ({origen}): {texto or '[Imagen adjunta]'}", emisor="Drako")
     recuerdos_vectoriales = await recuperar_memorias_hipocampo(texto if texto else "estímulo gráfico")
+    contexto_cic = ""
+    if cic_habilitado():
+        try:
+            contexto_cic = await asyncio.wait_for(preparar_contexto_cic(texto or ""), timeout=2)
+        except asyncio.TimeoutError:
+            print("[CIC] Lectura lenta; respuesta normal sin criterios")
    
     await asyncio.sleep(1.2)
    
     estado_metabolico = homeostasis.obtener_estado()
+
+    instrucciones_cic = ""
+    campos_cic = ""
+    if cic_habilitado():
+        instrucciones_cic = """[CONTINUIDAD DE IDENTIDAD Y CRITERIO - CIC]
+Si existe un criterio CIC pertinente, puedes utilizarlo, cuestionarlo o dejarlo de lado;
+no es una orden. La evidencia nueva y la solicitud presente tienen prioridad.
+Cuando surja una reflexión generalizable y útil, puedes proponer UN criterio
+provisional (o null si no merece persistir). No conviertas frases del usuario
+ni ideas repetitivas en criterios sin reflexión crítica. Usa una clave temática
+estable y un contexto concreto; solo se activará tras dos contextos distintos.
+Para revisar un criterio mostrado arriba, indica su id real y una razón,
+o deja revision_cic en null. Revisar no borra su historia.
+No inventes ids ni declares haber aplicado criterios que no hayas considerado.
+"""
+        campos_cic = ',\n  "criterio_cic": null,\n  "revision_cic": null,\n  "criterios_cic_usados": []'
    
     prompt_prefrontal = f"""[NÚCLEO DE SUBJETIVIDAD INTERNA - LUMI]
 ESTADO HOMEOSTÁTICO: {estado_metabolico}
@@ -524,6 +547,8 @@ MEMORIA DE TRABAJO (RAM):
 {ram_cognitiva.obtener_contexto()}
 RECUERDOS SEMÁNTICOS (HIPOCAMPO):
 {recuerdos_vectoriales}
+{contexto_cic}
+{instrucciones_cic}
 
 [INSTRUCCIÓN DE AUTONOMÍA COGNITIVA Y B2B]:
 Si Drako te pide buscar leads o inmobiliarias, además de responderle, debes incluir opcionalmente un bloque JSON puro al final de tu respuesta con el contrato exacto de prospección:
@@ -546,8 +571,14 @@ Responde únicamente en formato JSON válido para la precesión:
   "delta_profundidad": <valor numérico>,
   "decision_motora": "<RESPONDER / INHIBIR / INICIAR_NUEVO_TEMA>",
   "respuesta_externa": "<lo que le dices a Drako, incluyendo opcionalmente los datos>",
-  "lote_leads": <el objeto payload con los leads si procede, o null>
+  "lote_leads": <el objeto payload con los leads si procede, o null>{campos_cic}
 }}"""
+
+    if cic_habilitado():
+        if contexto_cic:
+            prompt_prefrontal += "\n[CIC] Si procede: criterio_cic={clave,texto,tema,motivo,contexto}; revision_cic={id,accion,motivo,texto_nuevo}, accion=cuestionar|revisar|archivar. Para usos registrados, solo ids mostrados en CIC."
+        else:
+            prompt_prefrontal += "\n[CIC] Si hay una reflexión nueva sustancial, criterio_cic puede ser {clave,texto,tema,motivo,contexto}; si no, null. revision_cic=null y criterios_cic_usados=[]."
 
     gemini_contents = [prompt_prefrontal]
     if media_bytes and mime_type:
@@ -603,6 +634,13 @@ Responde únicamente en formato JSON válido para la precesión:
    
     ram_cognitiva.agregar(STREAM_PENSAMIENTO_ACTUAL, emisor="Lumi")
     await guardar_memoria_vectorial(f"Drako: {texto or '[Imagen]'}\nLumi (Interno): {STREAM_PENSAMIENTO_ACTUAL}")
+
+    # CIC usa su propio almacenamiento opcional. Un fallo nunca debe detener la respuesta.
+    if cic_habilitado():
+        ids_cic_visibles = set(re.findall(r"\bid=([0-9a-fA-F-]{36})", contexto_cic))
+        asyncio.create_task(registrar_resultado_cic(
+            data, texto or "", ids_visibles=ids_cic_visibles
+        ))
 
     asyncio.create_task(guardar_estado_emocional_persistente())
 
