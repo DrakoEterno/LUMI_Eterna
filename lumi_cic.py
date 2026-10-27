@@ -23,6 +23,7 @@ TABLA_HISTORIAL = "lumi_cic_historial"
 MAX_CRITERIOS_EN_PROMPT = 2
 MAX_CANDIDATOS_EN_PROMPT = 2
 TABLA_NARRATIVAS = "lumi_cic_narrativas"
+_narrativa_bootstrap_en_curso = False
 
 
 def cic_v2_habilitado() -> bool:
@@ -53,6 +54,26 @@ def _normalizar(texto: str) -> str:
 
 def _tokens(texto: str) -> set[str]:
     return {t for t in re.findall(r"[a-z0-9]{4,}", _normalizar(texto)) if t not in STOPWORDS}
+
+
+def _pregunta_por_trayectoria(texto: str) -> bool:
+    """Reconoce familias naturales de palabras, no solo un literal exacto."""
+    return bool(re.search(
+        r"\b(?:histori\w*|biografi\w*|trayector\w*|evoluc\w*|decisi\w*|"
+        r"criteri\w*|recuerd\w*|memor\w*|narrativ\w*|sintesi\w*|cic|cambi\w*)\b",
+        _normalizar(texto),
+    ))
+
+
+async def _inicializar_narrativa_en_segundo_plano(cliente) -> None:
+    """Rehidrata registros legados sin consumir el presupuesto de respuesta."""
+    global _narrativa_bootstrap_en_curso
+    try:
+        await asyncio.wait_for(_actualizar_narrativa(cliente), timeout=8.0)
+    except Exception as error:
+        print(f"[CIC] Inicialización narrativa pospuesta: {type(error).__name__}")
+    finally:
+        _narrativa_bootstrap_en_curso = False
 
 
 def _clave_valida(valor: Any) -> str | None:
@@ -126,22 +147,18 @@ async def preparar_contexto_cic(estimulo: str) -> str:
                             )
                 except Exception as error:
                     print(f"[CIC] Auditoría pospuesta: {type(error).__name__}")
-            if _tokens(estimulo) & {
-                "historia", "biografia", "trayectoria", "evolucion", "decisiones", "criterios",
-                "recuerdos", "memoria", "cic", "cambios",
-            }:
+            if _pregunta_por_trayectoria(estimulo):
                 try:
                     ultima = await asyncio.to_thread(
                         lambda: cliente.table(TABLA_NARRATIVAS)
                         .select("resumen").order("creado_en", desc=True).limit(1).execute()
                     )
                     if not ultima.data:
-                        # Primer uso tras actualizar desde v0.1: reconstruir sin borrar registros.
-                        await asyncio.wait_for(_actualizar_narrativa(cliente), timeout=1.3)
-                        ultima = await asyncio.to_thread(
-                            lambda: cliente.table(TABLA_NARRATIVAS)
-                            .select("resumen").order("creado_en", desc=True).limit(1).execute()
-                        )
+                        # Primer uso tras actualizar v0.1: tarea desacoplada del chat.
+                        global _narrativa_bootstrap_en_curso
+                        if not _narrativa_bootstrap_en_curso:
+                            _narrativa_bootstrap_en_curso = True
+                            asyncio.create_task(_inicializar_narrativa_en_segundo_plano(cliente))
                     if ultima.data:
                         lineas.append("[BIOGRAFÍA FUNCIONAL — registro revisable, no vivencia demostrada]")
                         lineas.append(_cortar(ultima.data[0].get("resumen"), 1500))
