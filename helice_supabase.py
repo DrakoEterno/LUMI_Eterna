@@ -20,6 +20,11 @@ from lumi_dashboard_security import (
     COOKIE, verificar_dashboard, verificar_webhook_telegram,
     comprobar_password, crear_sesion, tiene_sesion, validar_origen, cookie_segura,
 )
+from lumi_hipotesis_latentes import (
+    banco_disponible,
+    guardar_hipotesis,
+    registrar_bitacora,
+)
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse, Response
 from supabase import create_client
 from google import genai
@@ -655,8 +660,73 @@ async def worker_sedimentacion_continua():
                     for item in res.data:
                         pensamiento_previo = item["content"]
                         prompt_reflexion = f"Contempla este rastro de pensamiento previo en tu flujo interno y extrae una síntesis profunda o un aprendizaje sedimentado:\n'{pensamiento_previo}'"
-                       
-                        sintesis = await generar_gemini(prompt_reflexion, temperature=0.7, max_tokens=300)
+
+                        # El banco es opcional: sin su clave privada todo sigue
+                        # exactamente por el camino de sedimentación anterior.
+                        if banco_disponible():
+                            prompt_banco = f"""{prompt_reflexion}
+
+Además del aprendizaje de memoria habitual, puedes proponer una hipótesis
+distinta que desees conservar como borrador reservado. No es obligatorio:
+si no tienes una propuesta útil, elige null. La hipótesis privada NO debe
+aparecer en la síntesis pública, que seguirá el flujo de memoria existente.
+Devuelve ÚNICAMENTE este JSON válido, sin Markdown ni texto adicional:
+{{
+  "sintesis_publica": "tu aprendizaje habitual, sin la hipótesis reservada",
+  "hipotesis_reservada": null
+}}
+Si decides conservar una hipótesis, sustituye null por un objeto con
+"titulo", "contenido" y "motivo". No incluyas datos privados de Drako
+innecesarios y distingue una intuición de un hecho comprobado."""
+                            respuesta_sedimentacion = await generar_gemini(
+                                prompt_banco, temperature=0.7, max_tokens=430
+                            )
+                            try:
+                                texto_json = respuesta_sedimentacion.strip()
+                                if texto_json.startswith("```"):
+                                    texto_json = re.sub(
+                                        r"^```(?:json)?\s*|\s*```$", "", texto_json,
+                                        flags=re.IGNORECASE,
+                                    ).strip()
+                                partes = json.loads(texto_json)
+                                if not isinstance(partes, dict):
+                                    raise ValueError("La sedimentación no devolvió un objeto")
+                                sintesis = partes.get("sintesis_publica")
+                                if not isinstance(sintesis, str) or not sintesis.strip():
+                                    raise ValueError("No hay síntesis pública verificable")
+                                sintesis = sintesis.strip()
+                            except (TypeError, ValueError, AttributeError):
+                                # Fallo cerrado: nunca publicar un JSON no
+                                # interpretado que pudiera contener material reservado.
+                                print("[HIPOTESIS] Respuesta no separable; rastro pendiente.")
+                                continue
+
+                            propuesta = partes.get("hipotesis_reservada")
+                            if isinstance(propuesta, dict):
+                                contenido_privado = propuesta.get("contenido")
+                                if isinstance(contenido_privado, str) and contenido_privado.strip():
+                                    titulo = propuesta.get("titulo")
+                                    motivo = propuesta.get("motivo")
+                                    motivo = motivo if isinstance(motivo, str) else "Borrador seleccionado durante sedimentación"
+                                    identificador = await guardar_hipotesis(
+                                        contenido_privado.strip(),
+                                        fuente_latentstream_id=item.get("id"),
+                                        titulo=titulo if isinstance(titulo, str) else None,
+                                        motivo_estado=motivo,
+                                        contexto={"origen": "sedimentacion_90m"},
+                                    )
+                                    if identificador:
+                                        await registrar_bitacora(
+                                            "revision_hipotesis", motivo,
+                                            hipotesis_id=identificador,
+                                            evidencia={"fuente_latentstream_id": item.get("id")},
+                                            resultado={"estado": "reservada", "publicada": False},
+                                        )
+                        else:
+                            sintesis = await generar_gemini(
+                                prompt_reflexion, temperature=0.7, max_tokens=300
+                            )
+
                         if sintesis and sintesis != "...":
                             await guardar_memoria_vectorial(f"[Reflexión Autónoma de Latencia]: {sintesis}", origen="sedimentacion_interna")
                             supabase.table("latentstream").update({"processed": True}).eq("id", item["id"]).execute()
