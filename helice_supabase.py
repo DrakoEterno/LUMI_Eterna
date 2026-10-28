@@ -727,7 +727,13 @@ Responde únicamente en formato JSON válido para la precesión:
             "lote_leads": None
         }
         delta_oxi, delta_val, delta_nos, delta_pro = 0.0, 0.0, 0.0, 0.0
-
+    # --- DIAGNÓSTICO DE AUTONOMÍA ---
+    print(
+        "[DIAG_AUTONOMIA] "
+        f"activa={autonomia_habilitada()} "
+        f"objetivo_nuevo={type(data.get('objetivo_nuevo')).__name__}",
+        flush=True
+    )
     # --- DISPARADOR AUTÓNOMO HACIA SUPABASE ---
     lote = data.get("lote_leads")
     if lote and isinstance(lote, dict) and "payload" in lote:
