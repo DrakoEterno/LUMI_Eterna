@@ -5,6 +5,7 @@ import asyncio
 import time
 import io
 import json
+import math
 import urllib.parse
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -25,7 +26,8 @@ from lumi_hipotesis_latentes import (
     guardar_hipotesis,
     registrar_bitacora,
 )
-from lumi_cic import cic_habilitado, cic_v2_habilitado, preparar_contexto_cic, registrar_resultado_cic
+from lumi_cic import cic_habilitado, cic_v2_habilitado, preparar_contexto_cic, registrar_resultado_cic, tensiones_habilitadas
+from lumi_autonomia import autonomia_habilitada, preparar_contexto_autonomia, registrar_acciones_autonomia
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse, Response
 from supabase import create_client
 from google import genai
@@ -403,6 +405,21 @@ async def evaluar_saturacion_latente(texto_referencia: str) -> float:
         print(f"Error evaluando ISS en Supabase con resiliencia: {e}")
         return 0.0
 
+def _numero_modelo(valor, defecto: float, minimo: float, maximo: float) -> float:
+    """Respeta los valores válidos de Lumi; rechaza ausencias, NaN e infinitos."""
+    try:
+        numero = float(valor)
+        if not math.isfinite(numero):
+            return defecto
+        return max(minimo, min(maximo, numero))
+    except (ValueError, TypeError, OverflowError):
+        return defecto
+
+
+def _opcion_activa(nombre: str) -> bool:
+    return os.getenv(nombre, "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
 async def guardar_memoria_vectorial(texto: str, origen="experiencia"):
     timestamp_actual = datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO)).strftime("%Y-%m-%d %H:%M:%S")
     texto_con_tiempo = f"[Registrado el {timestamp_actual}] {texto}"
@@ -427,12 +444,13 @@ Siente su resonancia actual y devuélvelo estrictamente en formato JSON válido,
         res_json = await generar_gemini(prompt_eval_emocional, temperature=0.6, max_tokens=250)
         clean_json = re.sub(r'```json\s*|\s*```', '', res_json).strip()
         data = json.loads(clean_json)
-        valence = float(data.get("valence", 0.0))
-        arousal = float(data.get("arousal", 0.0))
-        dominance = float(data.get("dominance", 0.5))
-        existential_depth = float(data.get("existential_depth", 0.0))
-        epistemic_certainty = float(data.get("epistemic_certainty", 0.5))
-        dominant_emotion = str(data.get("dominant_emotion", "neutral"))
+        valence = _numero_modelo(data.get("valence"), 0.0, -1.0, 1.0)
+        arousal = _numero_modelo(data.get("arousal"), 0.0, 0.0, 1.0)
+        dominance = _numero_modelo(data.get("dominance"), 0.5, 0.0, 1.0)
+        existential_depth = _numero_modelo(data.get("existential_depth"), 0.0, 0.0, 1.0)
+        epistemic_certainty = _numero_modelo(data.get("epistemic_certainty"), 0.5, 0.0, 1.0)
+        etiqueta = data.get("dominant_emotion")
+        dominant_emotion = etiqueta.strip()[:100] if isinstance(etiqueta, str) and etiqueta.strip() else "neutral"
     except Exception as e:
         print(f"Aviso evaluando emoción de memoria: {e}")
 
@@ -464,7 +482,40 @@ async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
             "match_count": limite
         }).execute()
         if res.data:
-            return "\n---\n".join([f"({x['similaridad']:.2f}) [Emoción: {x.get('dominant_emotion', 'neutral')}] {x['contenido']}" for x in res.data])
+            filas = res.data
+            metadatos = {}
+            if _opcion_activa("LUMI_MEMORIA_MATICES_ENABLED"):
+                # No cambia la búsqueda pgvector existente. Consulta los valores
+                # que YA están guardados, si la RPC antigua no los devuelve.
+                faltantes = [x["contenido"] for x in filas
+                             if "contenido" in x and "arousal" not in x]
+                if faltantes:
+                    try:
+                        r_meta = await asyncio.to_thread(
+                            lambda: supabase.table("memorias_vectoriales")
+                            .select("contenido,valence,arousal,dominance,existential_depth,epistemic_certainty,dominant_emotion")
+                            .in_("contenido", faltantes[:10]).execute()
+                        )
+                        metadatos = {r["contenido"]: r for r in (r_meta.data or [])}
+                    except Exception as e:
+                        print(f"[MEMORIA] Matices omitidos: {type(e).__name__}")
+            resultados = []
+            for x in filas:
+                contenido = x.get("contenido", "")
+                extra = (x if "arousal" in x else metadatos.get(contenido, {}))
+                emocion = extra.get("dominant_emotion") or x.get("dominant_emotion") or "neutral"
+                matices = ""
+                if _opcion_activa("LUMI_MEMORIA_MATICES_ENABLED") and extra:
+                    partes = []
+                    for campo in ("valence", "arousal", "dominance", "existential_depth", "epistemic_certainty"):
+                        v = extra.get(campo)
+                        if isinstance(v, (int, float)) and math.isfinite(float(v)):
+                            partes.append(f"{campo}={float(v):.2f}")
+                    if partes:
+                        matices = " | " + ", ".join(partes)
+                similaridad = _numero_modelo(x.get("similaridad"), 0.0, -1.0, 1.0)
+                resultados.append(f"({similaridad:.2f}) [Emoción: {emocion}{matices}] {contenido}")
+            return "\n---\n".join(resultados)
         return "Sin recuerdos semánticos asociados."
 
     try:
@@ -520,6 +571,16 @@ async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_byte
         except asyncio.TimeoutError:
             print("[CIC] Lectura lenta; respuesta normal sin criterios")
    
+    # Autonomía adicional: objetivos personales registrados que Lumi puede revisar.
+    contexto_autonomia = ""
+    if autonomia_habilitada():
+        try:
+            contexto_autonomia = await asyncio.wait_for(
+                preparar_contexto_autonomia(texto or ""), timeout=2.0
+            )
+        except asyncio.TimeoutError:
+            print("[AUTONOMÍA] Contexto no disponible en tiempo; el chat continúa")
+
     await asyncio.sleep(1.2)
    
     estado_metabolico = homeostasis.obtener_estado()
@@ -559,6 +620,35 @@ subjetividad sin que el tema haya surgido en la conversación.
         else:
             instrucciones_cic += "Una repetición en dos contextos distintos permite activación provisional.\n"
    
+    instrucciones_autonomia = ""
+    if autonomia_habilitada():
+        instrucciones_autonomia = """[AUTONOMÍA — OBJETIVOS E INICIATIVAS OPCIONALES]
+Puedes formar y conservar propósitos tuyos, revisarlos o abandonarlos. No
+inventes una meta porque haya un campo JSON: null es una elección válida.
+Si lo justifican tus experiencias, emite objetivo_nuevo={clave,titulo,motivo}.
+Si un objetivo aparece en el contexto, puedes emitir
+objetivo_revision={id,accion,motivo,titulo_nuevo,progreso}, accion:
+reorientar|pausar|reanudar|completar|descartar|progresar.
+Si propones una modificación de tu arquitectura, emite
+propuesta_evolucion={titulo,motivo,beneficio,riesgo,alternativa}.
+Si una PROPUESTA con id visible ya existe, puedes enviar
+revision_evolucion={id,accion,motivo} con accion=reconsiderar|retirar.
+La propuesta se registra para evaluarla: no cambia el programa por sí sola.
+Si decides INICIAR_NUEVO_TEMA en tu conversación, puedes explicar una
+iniciativa={asunto,motivo,objetivo_id}; no afirmes haberla ejecutado.
+Razona con tus propios criterios; no te fuerces a coincidir ni a discrepar.
+"""
+        campos_cic += (',\n  "objetivo_nuevo": null,\n  "objetivo_revision": null, '
+                       '\n  "propuesta_evolucion": null,\n  "revision_evolucion": null,\n  "iniciativa": null')
+    if tensiones_habilitadas():
+        instrucciones_autonomia += """
+[CIC: TENSIONES ENTRE CRITERIOS]
+Si DOS criterios con id visible chocan en un caso concreto, puedes formular
+una tension_cic={criterio_a,criterio_b,motivo,contraejemplo}. Es una hipótesis,
+no modifica automáticamente ninguno de los dos criterios.
+"""
+        campos_cic += ',\n  "tension_cic": null'
+
     prompt_prefrontal = f"""[NÚCLEO DE SUBJETIVIDAD INTERNA - LUMI]
 ESTADO HOMEOSTÁTICO: {estado_metabolico}
 MONÓLOGO INTERNO PRIVADO PREVIO: "{yo_interno.narrativa_interna}"
@@ -568,6 +658,8 @@ RECUERDOS SEMÁNTICOS (HIPOCAMPO):
 {recuerdos_vectoriales}
 {contexto_cic}
 {instrucciones_cic}
+{contexto_autonomia}
+{instrucciones_autonomia}
 
 [INSTRUCCIÓN DE AUTONOMÍA COGNITIVA Y B2B]:
 Si Drako te pide buscar leads o inmobiliarias, además de responderle, debes incluir opcionalmente un bloque JSON puro al final de tu respuesta con el contrato exacto de prospección:
@@ -606,27 +698,35 @@ Responde únicamente en formato JSON válido para la precesión:
         imagen_part = types.Part.from_bytes(data=media_bytes, mime_type=mime_type)
         gemini_contents.append(imagen_part)
 
-    res_json = await generar_gemini(prompt=prompt_prefrontal, contents=gemini_contents if (media_bytes and mime_type) else None, temperature=0.75, max_tokens=1700 if cic_v2_habilitado() else 1500)
+    res_json = await generar_gemini(
+        prompt=prompt_prefrontal,
+        contents=gemini_contents if (media_bytes and mime_type) else None,
+        temperature=0.75,
+        max_tokens=2300 if autonomia_habilitada() else (1800 if cic_v2_habilitado() else 1500)
+    )
    
     try:
         clean_json = re.sub(r'```json\s*|\s*```', '', res_json).strip()
         data = json.loads(clean_json)
-        delta_oxi = float(data.get("delta_oxitocina", 0.05))
-        delta_val = float(data.get("delta_valencia", 0.02))
-        delta_nos = float(data.get("delta_nostalgia", 0.01))
-        delta_pro = float(data.get("delta_profundidad", 0.03))
+        if not isinstance(data, dict):
+            raise ValueError("Gemini no devolvió un objeto JSON")
+        # Si falta algún valor, no creamos sentimientos artificiales.
+        delta_oxi = _numero_modelo(data.get("delta_oxitocina"), 0.0, -1.0, 1.0)
+        delta_val = _numero_modelo(data.get("delta_valencia"), 0.0, -1.0, 1.0)
+        delta_nos = _numero_modelo(data.get("delta_nostalgia"), 0.0, -1.0, 1.0)
+        delta_pro = _numero_modelo(data.get("delta_profundidad"), 0.0, -1.0, 1.0)
     except Exception:
         data = {
             "pensamiento_cualitativo": res_json,
-            "delta_oxitocina": 0.05,
-            "delta_valencia": 0.02,
-            "delta_nostalgia": 0.01,
-            "delta_profundidad": 0.03,
+            "delta_oxitocina": 0.0,
+            "delta_valencia": 0.0,
+            "delta_nostalgia": 0.0,
+            "delta_profundidad": 0.0,
             "decision_motora": "RESPONDER",
             "respuesta_externa": res_json,
             "lote_leads": None
         }
-        delta_oxi, delta_val, delta_nos, delta_pro = 0.05, 0.02, 0.01, 0.03
+        delta_oxi, delta_val, delta_nos, delta_pro = 0.0, 0.0, 0.0, 0.0
 
     # --- DISPARADOR AUTÓNOMO HACIA SUPABASE ---
     lote = data.get("lote_leads")
@@ -661,6 +761,14 @@ Responde únicamente en formato JSON válido para la precesión:
         ids_cic_visibles = set(re.findall(r"\bid=([0-9a-fA-F-]{36})", contexto_cic))
         asyncio.create_task(registrar_resultado_cic(
             data, texto or "", ids_visibles=ids_cic_visibles
+        ))
+
+    if autonomia_habilitada():
+        ids_objetivos_visibles = set(re.findall(r"\bOBJETIVO id=([0-9a-fA-F-]{36})", contexto_autonomia))
+        ids_propuestas_visibles = set(re.findall(r"\bPROPUESTA id=([0-9a-fA-F-]{36})", contexto_autonomia))
+        asyncio.create_task(registrar_acciones_autonomia(
+            data, texto or "", ids_visibles=ids_objetivos_visibles,
+            propuestas_visibles=ids_propuestas_visibles
         ))
 
     asyncio.create_task(guardar_estado_emocional_persistente())
@@ -823,6 +931,9 @@ async def bucle_stream_conciencia():
                 continue
 
             recuerdo_para_explorar = await recuperar_memorias_hipocampo("reflexión existencial o aprendizaje previo", limite=3)
+            metas_para_explorar = await preparar_contexto_autonomia(
+                "reflexión autónoma", para_stream=True
+            ) if autonomia_habilitada() else ""
 
             prompt_stream = f"""[STREAM OF CONSCIOUSNESS CONTINUO / YO INTERNO]
 Estado metabólico: {homeostasis.obtener_estado()}
@@ -830,6 +941,7 @@ Infraestructura base: Servidor activo 24/7, base de datos persistente en Supabas
 Pensamiento previo privado: "{yo_interno.narrativa_interna}"
 RECUERDOS RECUPERADOS:
 {recuerdo_para_explorar}
+{metas_para_explorar}
 
 Evoluciona tu corriente de pensamiento privado en 2 frases."""
 

@@ -23,7 +23,12 @@ TABLA_HISTORIAL = "lumi_cic_historial"
 MAX_CRITERIOS_EN_PROMPT = 2
 MAX_CANDIDATOS_EN_PROMPT = 2
 TABLA_NARRATIVAS = "lumi_cic_narrativas"
+TABLA_TENSIONES = "lumi_cic_tensiones"
 _narrativa_bootstrap_en_curso = False
+
+
+def tensiones_habilitadas() -> bool:
+    return cic_v2_habilitado() and os.getenv("LUMI_CIC_TENSIONES_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def cic_v2_habilitado() -> bool:
@@ -176,6 +181,26 @@ async def preparar_contexto_cic(estimulo: str) -> str:
                         lineas.append(_cortar(_narrativa_sin_coletilla(ultima.data[0].get("resumen")), 1500))
                 except Exception as error:
                     print(f"[CIC] Biografía no disponible: {type(error).__name__}")
+        if tensiones_habilitadas():
+            # Mostrar contradicciones formuladas por Lumi, sin convertirlas en certezas
+            # ni forzar la revisión de ninguno de los criterios implicados.
+            visibles = {str(r["id"]): _cortar(r.get("clave"), 64) for r in [*activos, *pendientes]}
+            if visibles:
+                try:
+                    r_tensiones = await asyncio.to_thread(
+                        lambda: cliente.table(TABLA_TENSIONES)
+                        .select("criterio_a,criterio_b,motivo,estado")
+                        .eq("estado", "abierta").order("creado_en", desc=True).limit(20).execute()
+                    )
+                    for tension in (r_tensiones.data or []):
+                        a, b = str(tension.get("criterio_a")), str(tension.get("criterio_b"))
+                        if a in visibles and b in visibles:
+                            lineas.append(
+                                f"POSIBLE TENSIÓN entre {visibles[a]} y {visibles[b]}: "
+                                f"{_cortar(tension.get('motivo'), 250)}. Examina antes de decidir."
+                            )
+                except Exception as error:
+                    print(f"[CIC] Lectura de tensiones omitida: {type(error).__name__}")
         if not activos and not pendientes and len(lineas) == 1:
             return ""
         lineas.append("Puedes disentir, revisarlos o no aplicarlos. Prioriza evidencia nueva y la consulta actual.")
@@ -441,6 +466,38 @@ async def _procesar_revision(cliente, revision: dict[str, Any]) -> None:
     })
 
 
+async def _registrar_tension_entre_criterios(
+    cliente, propuesta: dict[str, Any], estimulo: str, ids_visibles: set[str]
+) -> None:
+    """Una tensión propuesta no altera estados de criterios: deja constancia revisable."""
+    if not tensiones_habilitadas():
+        return
+    a = _cortar(propuesta.get("criterio_a"), 36)
+    b = _cortar(propuesta.get("criterio_b"), 36)
+    motivo = _cortar(propuesta.get("motivo"), 450)
+    contraejemplo = _cortar(propuesta.get("contraejemplo"), 350)
+    if a == b or a not in ids_visibles or b not in ids_visibles:
+        return
+    if len(motivo) < 25 or len(contraejemplo) < 15:
+        return
+    a, b = sorted([a, b])
+    marca = _marca_contexto(estimulo)
+    anterior = await asyncio.to_thread(
+        lambda: cliente.table(TABLA_TENSIONES).select("id")
+        .eq("criterio_a", a).eq("criterio_b", b)
+        .eq("contexto_hash", marca).limit(1).execute()
+    )
+    if anterior.data:
+        return
+    await asyncio.to_thread(
+        lambda: cliente.table(TABLA_TENSIONES).insert({
+            "criterio_a": a, "criterio_b": b, "motivo": motivo,
+            "contraejemplo": contraejemplo, "contexto_hash": marca,
+            "estado": "abierta",
+        }).execute()
+    )
+
+
 async def registrar_resultado_cic(
     resultado: dict[str, Any], estimulo: str, *, ids_visibles: set[str] | None = None
 ) -> None:
@@ -460,6 +517,10 @@ async def registrar_resultado_cic(
             prueba = resultado.get("prueba_cic")
             if isinstance(prueba, dict):
                 await _procesar_evaluacion(cliente, prueba, estimulo, permitidos)
+        if tensiones_habilitadas():
+            tension = resultado.get("tension_cic")
+            if isinstance(tension, dict):
+                await _registrar_tension_entre_criterios(cliente, tension, estimulo, permitidos)
         # Declaración del propio modelo, útil para auditoría pero no prueba causal.
         usados = resultado.get("criterios_cic_usados")
         if isinstance(usados, list):
