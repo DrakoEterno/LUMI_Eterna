@@ -788,7 +788,14 @@ Responde únicamente en formato JSON válido para la precesión:
         objetivo_declarado = await _estructurar_objetivo_ya_declarado(data.get("respuesta_externa"))
         if objetivo_declarado is not None:
             data["objetivo_nuevo"] = objetivo_declarado
-
+    # --- DIAGNÓSTICO DE TENSIONES CIC ---
+    print(
+        "[DIAG_TENSIONES] "
+        f"activa={tensiones_habilitadas()} "
+        f"criterios_visibles={len(set(re.findall(r'id=([0-9a-fA-F-]{36})', contexto_cic)))} "
+        f"tension_cic={type(data.get('tension_cic')).__name__}",
+        flush=True
+    )
     # --- DIAGNÓSTICO DE AUTONOMÍA ---
     print(
         "[DIAG_AUTONOMIA] "
