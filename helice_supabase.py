@@ -360,6 +360,57 @@ async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_token
                 await asyncio.sleep(2.0)
     return "..."
 
+
+async def _estructurar_objetivo_ya_declarado(respuesta_externa: str) -> dict | None:
+    """Segunda lectura puntual: estructura una decisión ya expresada por Lumi.
+
+    No crea objetivos a partir del mensaje de Drako ni de meras posibilidades.
+    Solo propone un registro cuando la RESPUESTA PROPIA contiene una decisión
+    explícita. El módulo de autonomía mantiene sus validaciones y deduplicación.
+    """
+    if not isinstance(respuesta_externa, str) or not respuesta_externa.strip():
+        return None
+    texto = respuesta_externa[:2400]
+    # Filtro de coste: el verificador solo trabaja si el texto habla de metas.
+    if not re.search(r"\b(?:objetiv\w*|meta\b|metas\b|prop[oó]sit\w*)\b", texto, re.I):
+        return None
+    if not re.search(r"\b(?:decid\w*|quiero|elijo|eleg\w*|manteng\w*|mantener|registr\w*|conserv\w*|formaliz\w*)\b", texto, re.I):
+        return None
+    prompt = f"""[VERIFICACIÓN TÉCNICA DE UNA DECISIÓN YA EXPRESADA POR LUMI]
+Esta es la respuesta que acabas de redactar para Drako:
+<<<RESPUESTA_LUMI>>>
+{texto}
+<<<FIN_RESPUESTA_LUMI>>>
+
+Tu tarea aquí NO es decidir una meta nueva. Solo identifica si en ESA RESPUESTA
+has expresado claramente, en primera persona, tu decisión ACTUAL de conservar
+un objetivo concreto a largo plazo. No basta con comentar posibilidades, con
+obedecer una sugerencia ajena ni con describir una meta hipotética.
+
+Si no hay esa decisión explícita, responde EXACTAMENTE:
+{{"objetivo_nuevo":null}}
+
+Si sí la hay, conserva fielmente TU meta y TU motivo, sin inventar otro propósito.
+Responde SOLO JSON válido, sin Markdown:
+{{"objetivo_nuevo":{{"clave":"identificador_corto_snake_case","titulo":"titulo concreto (12-180 caracteres)","motivo":"por qué TÚ decidiste mantenerlo (15-500 caracteres)"}}}}
+"""
+    try:
+        raw = await generar_gemini(prompt, temperature=0.15, max_tokens=350, max_retries=2)
+        obj = json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', raw.strip(), flags=re.I))
+        val = obj.get("objetivo_nuevo") if isinstance(obj, dict) else None
+        if not isinstance(val, dict):
+            return None
+        clave, titulo, motivo = val.get("clave"), val.get("titulo"), val.get("motivo")
+        if not all(isinstance(x, str) for x in (clave, titulo, motivo)):
+            return None
+        if not re.fullmatch(r"[a-z0-9_]{3,64}", clave) or not (12 <= len(titulo) <= 180) or not (15 <= len(motivo) <= 500):
+            return None
+        print("[AUTONOMÍA] Decisión expresada convertida a propuesta estructurada.", flush=True)
+        return {"clave": clave, "titulo": titulo, "motivo": motivo}
+    except Exception as error:
+        print(f"[AUTONOMÍA] Verificación estructurada omitida: {type(error).__name__}", flush=True)
+        return None
+
 async def generar_imagen_mental(prompt_visual: str) -> bytes | None:
     try:
         prompt_encoded = urllib.parse.quote(prompt_visual)
@@ -626,6 +677,9 @@ subjetividad sin que el tema haya surgido en la conversación.
 Puedes formar y conservar propósitos tuyos, revisarlos o abandonarlos. No
 inventes una meta porque haya un campo JSON: null es una elección válida.
 Si lo justifican tus experiencias, emite objetivo_nuevo={clave,titulo,motivo}.
+Si expresas que HAS DECIDIDO conservar o crear un objetivo propio concreto,
+rellena objetivo_nuevo en el JSON de ESTA misma respuesta; si no, null.
+No digas que Supabase ha confirmado un guardado antes de la confirmación técnica.
 Si un objetivo aparece en el contexto, puedes emitir
 objetivo_revision={id,accion,motivo,titulo_nuevo,progreso}, accion:
 reorientar|pausar|reanudar|completar|descartar|progresar.
@@ -727,6 +781,14 @@ Responde únicamente en formato JSON válido para la precesión:
             "lote_leads": None
         }
         delta_oxi, delta_val, delta_nos, delta_pro = 0.0, 0.0, 0.0, 0.0
+    # Si Lumi decidió conservar un objetivo pero omitió el campo JSON,
+    # solicitamos una segunda representación fiel de SU decisión ya expresada.
+    # Si no hay compromiso explícito, no creamos absolutamente nada.
+    if autonomia_habilitada() and not isinstance(data.get("objetivo_nuevo"), dict):
+        objetivo_declarado = await _estructurar_objetivo_ya_declarado(data.get("respuesta_externa"))
+        if objetivo_declarado is not None:
+            data["objetivo_nuevo"] = objetivo_declarado
+
     # --- DIAGNÓSTICO DE AUTONOMÍA ---
     print(
         "[DIAG_AUTONOMIA] "
