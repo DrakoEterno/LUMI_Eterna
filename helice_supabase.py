@@ -43,14 +43,8 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# Corrección robusta para detectar si la variable está vacía o sin protocolo
-_render_url_env = os.getenv("RENDER_EXTERNAL_URL", "").strip()
-if not _render_url_env:
-    RENDER_URL = "https://lumi-eterna.onrender.com"
-elif not _render_url_env.startswith(("http://", "https://")):
-    RENDER_URL = f"https://{_render_url_env}"
-else:
-    RENDER_URL = _render_url_env
+# URL fija y blindada para evitar cualquier fallo del entorno de Render
+RENDER_URL = "https://lumi-eterna.onrender.com"
 
 ZONA_HORARIA_DRAKO = os.getenv("TIMEZONE", "Europe/Madrid")
 
@@ -1159,14 +1153,18 @@ async def lifespan(app: FastAPI):
 
     if TELEGRAM_TOKEN:
         try:
+            webhook_url = f"{RENDER_URL}/telegram/webhook"
+            print(f"[WEBHOOK DEFINITIVO]: Registrando URL -> {webhook_url}")
+
             async with httpx.AsyncClient(timeout=10.0) as http_client:
-                await http_client.post(
+                res = await http_client.post(
                     f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_TOKEN}/setWebhook",
                     json={
-                        "url": f"{RENDER_URL}/telegram/webhook",
-                        "secret_token": os.environ["LUMI_TELEGRAM_WEBHOOK_SECRET"],
+                        "url": webhook_url,
+                        "secret_token": os.getenv("LUMI_TELEGRAM_WEBHOOK_SECRET", ""),
                     },
                 )
+                print(f"[TELEGRAM RESPUESTA]: {res.text}")
         except Exception as e:
             print(f"Error setWebhook: {e}")
            
@@ -1519,4 +1517,4 @@ def root():
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    uvicorn.run("helice_supabase:app", host="0.0.0.0", port=port)
