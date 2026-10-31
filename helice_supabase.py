@@ -1130,10 +1130,10 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
     async with httpx.AsyncClient(timeout=30.0) as http_client:
         if bytes_imagen_mental:
             files = {"photo": ("visio.jpg", bytes_imagen_mental, "image/jpeg")}
-            await http_client.post(f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_TOKEN}/sendPhoto", data={"chat_id": str(chat_id)}, files=files)
+            await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", data={"chat_id": str(chat_id)}, files=files)
 
         payload = {"chat_id": str(chat_id), "text": texto, "parse_mode": "Markdown"}
-        await http_client.post(f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_TOKEN}/sendMessage", json=payload)
+        await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json=payload)
 
         try:
             comunicador = edge_tts.Communicate(texto, "es-ES-ElviraNeural")
@@ -1143,7 +1143,7 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
                     audio_buffer.write(chunk["data"])
             audio_buffer.seek(0)
             files = {"voice": ("voice.ogg", audio_buffer, "audio/ogg")}
-            await http_client.post(f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_TOKEN}/sendVoice", data={"chat_id": str(chat_id)}, files=files)
+            await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice", data={"chat_id": str(chat_id)}, files=files)
         except Exception as e:
             print(f"Error nota de voz: {e}")
 
@@ -1158,7 +1158,7 @@ async def lifespan(app: FastAPI):
 
             async with httpx.AsyncClient(timeout=10.0) as http_client:
                 res = await http_client.post(
-                    f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_TOKEN}/setWebhook",
+                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook",
                     json={
                         "url": webhook_url,
                         "secret_token": os.getenv("LUMI_TELEGRAM_WEBHOOK_SECRET", ""),
@@ -1204,12 +1204,12 @@ async def telegram_webhook(request: Request):
             if "photo" in msg and msg["photo"]:
                 photo_file_id = msg["photo"][-1]["file_id"]
                 async with httpx.AsyncClient(timeout=30.0) as http_client:
-                    file_info_res = await http_client.get(f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_TOKEN}/getFile?file_id={photo_file_id}")
+                    file_info_res = await http_client.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getFile?file_id={photo_file_id}")
                     if file_info_res.status_code == 200:
                         file_info_data = file_info_res.json()
                         if file_info_data.get("ok"):
                             file_path = file_info_data["result"]["file_path"]
-                            file_download_res = await http_client.get(f"[https://api.telegram.org/file/bot](https://api.telegram.org/file/bot){TELEGRAM_TOKEN}/{file_path}")
+                            file_download_res = await http_client.get(f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}")
                             if file_download_res.status_code == 200:
                                 media_bytes = file_download_res.content
                                 mime_type = "image/jpeg"
@@ -1339,10 +1339,10 @@ def dashboard():
 <head>
 <meta charset="UTF-8">
 <title>LUMI - NÚCLEO NEUROBIOLÓGICO SOBERANO</title>
-<script crossorigin src="[https://unpkg.com/react@18/umd/react.production.min.js](https://unpkg.com/react@18/umd/react.production.min.js)"></script>
-<script crossorigin src="[https://unpkg.com/react-dom@18/umd/react-dom.production.min.js](https://unpkg.com/react-dom@18/umd/react-dom.production.min.js)"></script>
-<script src="[https://unpkg.com/@babel/standalone/babel.min.js](https://unpkg.com/@babel/standalone/babel.min.js)"></script>
-<script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
 <style>
   body { background: #020204; color: #f8fafc; font-family: monospace; }
 </style>
