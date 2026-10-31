@@ -42,7 +42,13 @@ GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "https://lumi-eterna.onrender.com")
+
+# Formateo defensivo para asegurar el protocolo en la URL del webhook
+_render_url_env = os.getenv("RENDER_EXTERNAL_URL", "https://lumi-eterna.onrender.com").strip()
+if _render_url_env and not _render_url_env.startswith(("http://", "https://")):
+    RENDER_URL = f"https://{_render_url_env}"
+else:
+    RENDER_URL = _render_url_env
 
 ZONA_HORARIA_DRAKO = os.getenv("TIMEZONE", "Europe/Madrid")
 
