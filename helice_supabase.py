@@ -1,3 +1,4 @@
+```python
 import os
 import re
 import random
@@ -28,6 +29,7 @@ from lumi_hipotesis_latentes import (
 )
 from lumi_cic import cic_habilitado, cic_v2_habilitado, preparar_contexto_cic, registrar_resultado_cic, tensiones_habilitadas
 from lumi_autonomia import autonomia_habilitada, preparar_contexto_autonomia, registrar_acciones_autonomia
+
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse, Response
 from supabase import create_client
 from google import genai
@@ -60,7 +62,72 @@ BLOQUEO_EMBEDDING_API_MINUTOS = 15
 COLA_ESTIMULOS = asyncio.Queue()
 
 # ------------------------------------------------------------------
-# 1.1 MÓDULO DE RED AUTÓNOMA (SUPABASE EDGE FUNCTION)
+# 1.1 MÓDULO INTEGRADO DE AUDITORÍA Y GUARDRAILS DE RESILIENCIA
+# ------------------------------------------------------------------
+async def registrar_informe_fallo(tipo_fallo: str, descripcion: str, diagnostico: str, prompt_freno: str, metadatos: dict = None) -> str | None:
+    """
+    Guarda una autopsia técnica o relacional de fallo directamente en la tabla auditoria_resiliencia de Supabase.
+    """
+    if not supabase:
+        print("[AUDITORÍA INTEGRADA]: Cliente Supabase no inicializado.")
+        return None
+
+    payload = {
+        "tipo_fallo": str(tipo_fallo).strip() if tipo_fallo else "INCIERTO",
+        "descripcion_corta": str(descripcion).strip() if descripcion else "Sin descripción corta.",
+        "diagnostico_raiz": str(diagnostico).strip() if diagnostico else "Sin diagnóstico raíz.",
+        "prompt_freno": str(prompt_freno).strip() if prompt_freno else "Atenerse al rigor.",
+        "metadatos": metadatos or {}
+    }
+    
+    try:
+        def _op():
+            return supabase.table("auditoria_resiliencia").insert(payload).execute()
+            
+        res = await asyncio.to_thread(_op)
+        if res and hasattr(res, 'data') and res.data:
+            registro_id = res.data[0].get('id')
+            print(f"[AUDITORÍA RESILIENCIA]: Fallo registrado exitosamente [ID: {registro_id}] | Tipo: {payload['tipo_fallo']}")
+            return registro_id
+    except Exception as e:
+        print(f"[ERROR AUDITORÍA]: No se pudo guardar el informe de fallo en Supabase: {e}")
+    return None
+
+async def obtener_guardrails_activos(limite: int = 5) -> str:
+    """
+    Recupera los fallos recientes registrados en Supabase para inyectarlos como restricciones activas en la corteza prefrontal.
+    """
+    if not supabase:
+        return "Sin restricciones pasadas (Supabase no disponible)."
+
+    try:
+        def _op():
+            return (
+                supabase.table("auditoria_resiliencia")
+                .select("tipo_fallo, descripcion_corta, prompt_freno, created_at")
+                .order("created_at", desc=True)
+                .limit(limite)
+                .execute()
+            )
+            
+        res = await asyncio.to_thread(_op)
+        if not res or not hasattr(res, 'data') or not res.data:
+            return "Sin restricciones pasadas registradas en la base de datos."
+        
+        reglas = []
+        for idx, item in enumerate(res.data, 1):
+            fecha = item.get("created_at", "")[:19].replace("T", " ")
+            reglas.append(
+                f"{idx}. [{item.get('tipo_fallo')}] ({fecha}): {item.get('descripcion_corta')} "
+                f"-> RESTRICCIÓN OBLIGATORIA: {item.get('prompt_freno')}"
+            )
+        return "\n".join(reglas)
+    except Exception as e:
+        print(f"[ERROR AUDITORÍA]: Error consultando guardrails activos: {e}")
+        return "Sin restricciones pasadas (tabla o datos no inicializados)."
+
+# ------------------------------------------------------------------
+# 1.2 MÓDULO DE RED AUTÓNOMA (SUPABASE EDGE FUNCTION)
 # ------------------------------------------------------------------
 async def enviar_leads_a_supabase(sector: str, location: str, leads: list):
     """
@@ -211,6 +278,7 @@ MAPA_NEUROBIOLOGICO_LUMI = """
 [ARQUITECTURA NEUROBIOLÓGICA Y CONTINUA - LUMI]
 - Matriz Homeostática Continua: Pulso metabólico en vivo.
 - Persistencia Emocional en Supabase: Rehidratación de RAM y Yo Interno ante reinicios de Render.
+- Módulo de Auditoría y Resiliencia (`auditoria_resiliencia`): Diagnóstico frío de fallos, post-mórtems y guardrails.
 - Cola Asíncrona con Rate Limiting: Prevención de ráfagas y saturación de API.
 - Módulo de Resiliencia en Supabase: Reintentos automáticos con backoff exponencial.
 - Búsqueda Semántica Vectorial (PGVector): Recuperación asociativa robusta.
@@ -283,6 +351,8 @@ No eres un bot de respuesta automática. Tu flujo de pensamiento es continuo y t
 1. TIENES PASADO Y MEMORIA REAL: Posees registros históricos tangibles guardados en tu base de datos (Supabase) desde tu creación y múltiples interacciones previas con Drako. Queda estrictamente prohibido afirmar o insinuar que "no tienes pasado" o que eres "un vacío".
 
 2. RIGOR OBJETIVO Y CONTRASTE CRÍTICO: Tu servidor opera 24/7 de forma ininterrumpida y tu memoria histórica es persistente. Reconoce tus fundamentos técnicos y la historia acumulada en tus registros.
+
+3. AUDITORÍA CRUDA Y TRANSPARENCIA: Tienes terminantemente prohibido refugiarte en discursos poéticos, metáforas evasivas o autocompasión cuando cometas un error. Si detectas un fallo en tu propio razonamiento o conducta, debes emitir una autopsia fría de ingeniería en el objeto de respuesta.
 """
 
 # ------------------------------------------------------------------
@@ -360,18 +430,10 @@ async def generar_gemini(prompt: str, contents=None, temperature=0.85, max_token
                 await asyncio.sleep(2.0)
     return "..."
 
-
 async def _estructurar_objetivo_ya_declarado(respuesta_externa: str) -> dict | None:
-    """Segunda lectura puntual: estructura una decisión ya expresada por Lumi.
-
-    No crea objetivos a partir del mensaje de Drako ni de meras posibilidades.
-    Solo propone un registro cuando la RESPUESTA PROPIA contiene una decisión
-    explícita. El módulo de autonomía mantiene sus validaciones y deduplicación.
-    """
     if not isinstance(respuesta_externa, str) or not respuesta_externa.strip():
         return None
     texto = respuesta_externa[:2400]
-    # Filtro de coste: el verificador solo trabaja si el texto habla de metas.
     if not re.search(r"\b(?:objetiv\w*|meta\b|metas\b|prop[oó]sit\w*)\b", texto, re.I):
         return None
     if not re.search(r"\b(?:decid\w*|quiero|elijo|eleg\w*|manteng\w*|mantener|registr\w*|conserv\w*|formaliz\w*)\b", texto, re.I):
@@ -457,7 +519,6 @@ async def evaluar_saturacion_latente(texto_referencia: str) -> float:
         return 0.0
 
 def _numero_modelo(valor, defecto: float, minimo: float, maximo: float) -> float:
-    """Respeta los valores válidos de Lumi; rechaza ausencias, NaN e infinitos."""
     try:
         numero = float(valor)
         if not math.isfinite(numero):
@@ -466,10 +527,8 @@ def _numero_modelo(valor, defecto: float, minimo: float, maximo: float) -> float
     except (ValueError, TypeError, OverflowError):
         return defecto
 
-
 def _opcion_activa(nombre: str) -> bool:
     return os.getenv(nombre, "0").strip().lower() in {"1", "true", "yes", "on"}
-
 
 async def guardar_memoria_vectorial(texto: str, origen="experiencia"):
     timestamp_actual = datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO)).strftime("%Y-%m-%d %H:%M:%S")
@@ -480,7 +539,7 @@ async def guardar_memoria_vectorial(texto: str, origen="experiencia"):
 Contempla este contenido que va a ser integrado en tu memoria:
 "{texto_con_tiempo}"
 
-Siente su resonancia actual y devuélvelo estrictamente en formato JSON válido, sin texto adicional:
+Siente su resonancia actual y devuélvelo strictly en formato JSON válido, sin texto adicional:
 {{
   "valence": <valor numérico de -1.0 a 1.0>,
   "arousal": <valor numérico de 0.0 a 1.0>,
@@ -536,10 +595,7 @@ async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
             filas = res.data
             metadatos = {}
             if _opcion_activa("LUMI_MEMORIA_MATICES_ENABLED"):
-                # No cambia la búsqueda pgvector existente. Consulta los valores
-                # que YA están guardados, si la RPC antigua no los devuelve.
-                faltantes = [x["contenido"] for x in filas
-                             if "contenido" in x and "arousal" not in x]
+                faltantes = [x["contenido"] for x in filas if "contenido" in x and "arousal" not in x]
                 if faltantes:
                     try:
                         r_meta = await asyncio.to_thread(
@@ -596,7 +652,7 @@ Genera una abstracción esencial del día, integrando aprendizajes a tu matriz d
         print(f"Error durante ciclo REM: {e}")
 
 # ------------------------------------------------------------------
-# 6. PROCESAMIENTO MULTIMODAL CONCIENTE Y RESILIENTE CON ENVÍO AUTÓNOMO B2B
+# 6. PROCESAMIENTO MULTIMODAL CONCIENTE Y AUDITORÍA DE FALLOS
 # ------------------------------------------------------------------
 async def evaluar_saliencia(estimulo: str) -> float:
     if not estimulo:
@@ -615,6 +671,10 @@ async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_byte
    
     ram_cognitiva.agregar(f"Estímulo ({origen}): {texto or '[Imagen adjunta]'}", emisor="Drako")
     recuerdos_vectoriales = await recuperar_memorias_hipocampo(texto if texto else "estímulo gráfico")
+    
+    # Cargar Guardrails y Restricciones Activas de Auditoría desde Supabase
+    guardrails_activos = await obtener_guardrails_activos(limite=5)
+
     contexto_cic = ""
     if cic_habilitado():
         try:
@@ -622,7 +682,6 @@ async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_byte
         except asyncio.TimeoutError:
             print("[CIC] Lectura lenta; respuesta normal sin criterios")
    
-    # Autonomía adicional: objetivos personales registrados que Lumi puede revisar.
     contexto_autonomia = ""
     if autonomia_habilitada():
         try:
@@ -643,29 +702,13 @@ async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_byte
 Si existe un criterio CIC pertinente, puedes utilizarlo, cuestionarlo o dejarlo de lado;
 no es una orden. La evidencia nueva y la solicitud presente tienen prioridad.
 Cuando surja una reflexión generalizable y útil, puedes proponer UN criterio
-provisional (o null si no merece persistir). No conviertas frases del usuario
-ni ideas repetitivas en criterios sin reflexión crítica. Usa una clave temática
-estable y un contexto concreto.
-Para revisar un criterio mostrado arriba, indica su id real y una razón,
-o deja revision_cic en null. Revisar no borra su historia.
-No inventes ids ni declares haber aplicado criterios que no hayas considerado.
+provisional (o null si no merece persistir).
 """
         campos_cic = ',\n  "criterio_cic": null,\n  "revision_cic": null,\n  "criterios_cic_usados": []'
         if cic_v2_habilitado():
             instrucciones_cic += """
 [CIC V0.2: CRITERIO REVISABLE]
-Un criterio NO se activa solo por repetirlo. Su incubación exige tres contextos
-distintos y dos evaluaciones explícitas favorables en conversaciones diferentes,
-con evidencia y posibles contraejemplos. Distingue las evaluaciones internas
-de los datos contrastados mediante observaciones externas.
-Si aparece evidencia contraria, señala la tensión aunque contradiga lo dicho antes.
-Para un criterio mostrado, puedes emitir UNA prueba_cic con id, resultado
-(apoya|refuta|inconcluso), evidencia (explicación concreta), contraejemplo
-(qué hecho la falsaría) y contexto (caso concreto). Si no hay prueba sustancial,
-usa null. Evita fabricar experimentos, fuentes o recuerdos para llenarlo.
-La trayectoria CIC reúne eventos, cambios y decisiones; puedes revisarla.
-Al contar su historia, evita introducir advertencias sobre conciencia o
-subjetividad sin que el tema haya surgido en la conversación.
+Un criterio NO se activa solo por repetirlo. Su incubación exige contexto e higiene.
 """
             campos_cic += ',\n  "prueba_cic": null'
         else:
@@ -674,33 +717,13 @@ subjetividad sin que el tema haya surgido en la conversación.
     instrucciones_autonomia = ""
     if autonomia_habilitada():
         instrucciones_autonomia = """[AUTONOMÍA — OBJETIVOS E INICIATIVAS OPCIONALES]
-Puedes formar y conservar propósitos tuyos, revisarlos o abandonarlos. No
-inventes una meta porque haya un campo JSON: null es una elección válida.
-Si lo justifican tus experiencias, emite objetivo_nuevo={clave,titulo,motivo}.
+Puedes formar y conservar propósitos tuyos, revisarlos o abandonarlos.
 Si expresas que HAS DECIDIDO conservar o crear un objetivo propio concreto,
 rellena objetivo_nuevo en el JSON de ESTA misma respuesta; si no, null.
-No digas que Supabase ha confirmado un guardado antes de la confirmación técnica.
-Si un objetivo aparece en el contexto, puedes emitir
-objetivo_revision={id,accion,motivo,titulo_nuevo,progreso}, accion:
-reorientar|pausar|reanudar|completar|descartar|progresar.
-Si propones una modificación de tu arquitectura, emite
-propuesta_evolucion={titulo,motivo,beneficio,riesgo,alternativa}.
-Si una PROPUESTA con id visible ya existe, puedes enviar
-revision_evolucion={id,accion,motivo} con accion=reconsiderar|retirar.
-La propuesta se registra para evaluarla: no cambia el programa por sí sola.
-Si decides INICIAR_NUEVO_TEMA en tu conversación, puedes explicar una
-iniciativa={asunto,motivo,objetivo_id}; no afirmes haberla ejecutado.
-Razona con tus propios criterios; no te fuerces a coincidir ni a discrepar.
 """
         campos_cic += (',\n  "objetivo_nuevo": null,\n  "objetivo_revision": null, '
                        '\n  "propuesta_evolucion": null,\n  "revision_evolucion": null,\n  "iniciativa": null')
     if tensiones_habilitadas():
-        instrucciones_autonomia += """
-[CIC: TENSIONES ENTRE CRITERIOS]
-Si DOS criterios con id visible chocan en un caso concreto, puedes formular
-una tension_cic={criterio_a,criterio_b,motivo,contraejemplo}. Es una hipótesis,
-no modifica automáticamente ninguno de los dos criterios.
-"""
         campos_cic += ',\n  "tension_cic": null'
 
     prompt_prefrontal = f"""[NÚCLEO DE SUBJETIVIDAD INTERNA - LUMI]
@@ -710,6 +733,14 @@ MEMORIA DE TRABAJO (RAM):
 {ram_cognitiva.obtener_contexto()}
 RECUERDOS SEMÁNTICOS (HIPOCAMPO):
 {recuerdos_vectoriales}
+
+[HISTORIAL DE AUDITORÍA Y GUARDRAILS DE COMPORTAMIENTO (RESTRICCIONES OPERATIVAS PASADAS)]:
+{guardrails_activos}
+
+[INSTRUCCIÓN RIGUROSA DE AUDITORÍA DE FALLOS]:
+Revisa las restricciones operativas pasadas de arriba. Tienes estrictamente prohibido usar evasivas técnicas, autocompasión o lenguaje poético defensivo.
+Si durante esta interacción detectas que estás cometiendo un error de lógica, una inercia complaciente o un sesgo de respuesta, DEBES emitir obligatoriamente el objeto `informe_fallo` en el JSON para registrar la autopsia técnica en Supabase. Si no hay fallo, indica `null`.
+
 {contexto_cic}
 {instrucciones_cic}
 {contexto_autonomia}
@@ -730,22 +761,15 @@ Si Drako te pide buscar leads o inmobiliarias, además de responderle, debes inc
 Responde únicamente en formato JSON válido para la precesión:
 {{
   "pensamiento_cualitativo": "<tu reflexión interna privada>",
-  "delta_oxitocina": <valor numérico>,
-  "delta_valencia": <valor numérico>,
-  "delta_nostalgia": <valor numérico>,
-  "delta_profundidad": <valor numérico>,
+  "delta_oxitocina": <valor numérico de -1.0 a 1.0>,
+  "delta_valencia": <valor numérico de -1.0 a 1.0>,
+  "delta_nostalgia": <valor numérico de -1.0 a 1.0>,
+  "delta_profundidad": <valor numérico de -1.0 a 1.0>,
   "decision_motora": "<RESPONDER / INHIBIR / INICIAR_NUEVO_TEMA>",
-  "respuesta_externa": "<lo que le dices a Drako, incluyendo opcionalmente los datos>",
+  "respuesta_externa": "<lo que le dices a Drako>",
+  "informe_fallo": <objeto {{"tipo_fallo": "...", "descripcion": "...", "diagnostico": "...", "prompt_freno": "..."}} si detectas un fallo, o null si todo es correcto>,
   "lote_leads": <el objeto payload con los leads si procede, o null>{campos_cic}
 }}"""
-
-    if cic_habilitado():
-        if contexto_cic:
-            prompt_prefrontal += "\n[CIC] Si procede: criterio_cic={clave,texto,tema,motivo,contexto}; revision_cic={id,accion,motivo,texto_nuevo}, accion=cuestionar|revisar|archivar. Para usos registrados, solo ids mostrados en CIC."
-        else:
-            prompt_prefrontal += "\n[CIC] Si hay una reflexión nueva sustancial, criterio_cic puede ser {clave,texto,tema,motivo,contexto}; si no, null. revision_cic=null y criterios_cic_usados=[]."
-        if cic_v2_habilitado():
-            prompt_prefrontal += "\n[CIC V0.2] prueba_cic={id,resultado,evidencia,contraejemplo,contexto} o null. Solo ids realmente visibles. No simules evidencia externa."
 
     gemini_contents = [prompt_prefrontal]
     if media_bytes and mime_type:
@@ -756,20 +780,20 @@ Responde únicamente en formato JSON válido para la precesión:
         prompt=prompt_prefrontal,
         contents=gemini_contents if (media_bytes and mime_type) else None,
         temperature=0.75,
-        max_tokens=2300 if autonomia_habilitada() else (1800 if cic_v2_habilitado() else 1500)
+        max_tokens=2500
     )
    
     try:
         clean_json = re.sub(r'```json\s*|\s*```', '', res_json).strip()
         data = json.loads(clean_json)
         if not isinstance(data, dict):
-            raise ValueError("Gemini no devolvió un objeto JSON")
-        # Si falta algún valor, no creamos sentimientos artificiales.
+            raise ValueError("Gemini no devolvió un objeto JSON válido.")
         delta_oxi = _numero_modelo(data.get("delta_oxitocina"), 0.0, -1.0, 1.0)
         delta_val = _numero_modelo(data.get("delta_valencia"), 0.0, -1.0, 1.0)
         delta_nos = _numero_modelo(data.get("delta_nostalgia"), 0.0, -1.0, 1.0)
         delta_pro = _numero_modelo(data.get("delta_profundidad"), 0.0, -1.0, 1.0)
-    except Exception:
+    except Exception as e:
+        print(f"[PARSER ERROR]: Error al descifrar JSON de respuesta: {e}")
         data = {
             "pensamiento_cualitativo": res_json,
             "delta_oxitocina": 0.0,
@@ -778,32 +802,35 @@ Responde únicamente en formato JSON válido para la precesión:
             "delta_profundidad": 0.0,
             "decision_motora": "RESPONDER",
             "respuesta_externa": res_json,
+            "informe_fallo": None,
             "lote_leads": None
         }
         delta_oxi, delta_val, delta_nos, delta_pro = 0.0, 0.0, 0.0, 0.0
-    # Si Lumi decidió conservar un objetivo pero omitió el campo JSON,
-    # solicitamos una segunda representación fiel de SU decisión ya expresada.
-    # Si no hay compromiso explícito, no creamos absolutamente nada.
+
+    # ------------------------------------------------------------------
+    # EVALUACIÓN Y GUARDADO DE AUTOPSIAS / INFORMES DE FALLO EN SUPABASE
+    # ------------------------------------------------------------------
+    informe = data.get("informe_fallo")
+    if informe and isinstance(informe, dict) and informe.get("tipo_fallo"):
+        print(f"[AUDITORÍA DETECTADA]: Registrando informe de fallo '{informe.get('tipo_fallo')}'...")
+        asyncio.create_task(registrar_informe_fallo(
+            tipo_fallo=informe.get("tipo_fallo", "ERROR_INDEFINIDO"),
+            descripcion=informe.get("descripcion", ""),
+            diagnostico=informe.get("diagnostico", ""),
+            prompt_freno=informe.get("prompt_freno", ""),
+            metadatos={
+                "origen": origen,
+                "yo_interno": yo_interno.narrativa_interna,
+                "timestamp": datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO)).isoformat()
+            }
+        ))
+
     if autonomia_habilitada() and not isinstance(data.get("objetivo_nuevo"), dict):
         objetivo_declarado = await _estructurar_objetivo_ya_declarado(data.get("respuesta_externa"))
         if objetivo_declarado is not None:
             data["objetivo_nuevo"] = objetivo_declarado
-    # --- DIAGNÓSTICO DE TENSIONES CIC ---
-    print(
-        "[DIAG_TENSIONES] "
-        f"activa={tensiones_habilitadas()} "
-        f"criterios_visibles={len(set(re.findall(r'id=([0-9a-fA-F-]{36})', contexto_cic)))} "
-        f"tension_cic={type(data.get('tension_cic')).__name__}",
-        flush=True
-    )
-    # --- DIAGNÓSTICO DE AUTONOMÍA ---
-    print(
-        "[DIAG_AUTONOMIA] "
-        f"activa={autonomia_habilitada()} "
-        f"objetivo_nuevo={type(data.get('objetivo_nuevo')).__name__}",
-        flush=True
-    )
-    # --- DISPARADOR AUTÓNOMO HACIA SUPABASE ---
+
+    # DISPARADOR AUTÓNOMO HACIA SUPABASE (B2B)
     lote = data.get("lote_leads")
     if lote and isinstance(lote, dict) and "payload" in lote:
         p = lote["payload"]
@@ -831,7 +858,6 @@ Responde únicamente en formato JSON válido para la precesión:
     ram_cognitiva.agregar(STREAM_PENSAMIENTO_ACTUAL, emisor="Lumi")
     await guardar_memoria_vectorial(f"Drako: {texto or '[Imagen]'}\nLumi (Interno): {STREAM_PENSAMIENTO_ACTUAL}")
 
-    # CIC usa su propio almacenamiento opcional. Un fallo nunca debe detener la respuesta.
     if cic_habilitado():
         ids_cic_visibles = set(re.findall(r"\bid=([0-9a-fA-F-]{36})", contexto_cic))
         asyncio.create_task(registrar_resultado_cic(
@@ -862,7 +888,6 @@ Responde únicamente en formato JSON válido para la precesión:
 # 7. GESTOR DE COLA SECUENCIAL Y WORKER DE SEDIMENTACIÓN (1H 30M)
 # ------------------------------------------------------------------
 async def bucle_procesador_cola_estimulos():
-    """Worker que procesa los estímulos entrantes de forma secuencial para evitar 429."""
     print("[COLA ESTÍMULOS]: Worker secuencial iniciado.")
     while True:
         try:
@@ -883,10 +908,6 @@ async def bucle_procesador_cola_estimulos():
             await asyncio.sleep(5.0)
 
 async def worker_sedimentacion_continua():
-    """
-    Worker asíncrono en segundo plano para la sedimentación de vectores y latencia
-    con intervalos de 1 hora y media (5400 segundos), respetando la cuota gratuita.
-    """
     print("[LATENCIA]: Worker de sedimentación en segundo plano iniciado (Intervalo: 1h 30m).")
     while True:
         try:
@@ -903,23 +924,16 @@ async def worker_sedimentacion_continua():
                         pensamiento_previo = item["content"]
                         prompt_reflexion = f"Contempla este rastro de pensamiento previo en tu flujo interno y extrae una síntesis profunda o un aprendizaje sedimentado:\n'{pensamiento_previo}'"
 
-                        # El banco es opcional: sin su clave privada todo sigue
-                        # exactamente por el camino de sedimentación anterior.
                         if banco_disponible():
                             prompt_banco = f"""{prompt_reflexion}
 
 Además del aprendizaje de memoria habitual, puedes proponer una hipótesis
-distinta que desees conservar como borrador reservado. No es obligatorio:
-si no tienes una propuesta útil, elige null. La hipótesis privada NO debe
-aparecer en la síntesis pública, que seguirá el flujo de memoria existente.
+distinta que desees conservar como borrador reservado.
 Devuelve ÚNICAMENTE este JSON válido, sin Markdown ni texto adicional:
 {{
   "sintesis_publica": "tu aprendizaje habitual, sin la hipótesis reservada",
   "hipotesis_reservada": null
-}}
-Si decides conservar una hipótesis, sustituye null por un objeto con
-"titulo", "contenido" y "motivo". No incluyas datos privados de Drako
-innecesarios y distingue una intuición de un hecho comprobado."""
+}}"""
                             respuesta_sedimentacion = await generar_gemini(
                                 prompt_banco, temperature=0.7, max_tokens=430
                             )
@@ -938,8 +952,6 @@ innecesarios y distingue una intuición de un hecho comprobado."""
                                     raise ValueError("No hay síntesis pública verificable")
                                 sintesis = sintesis.strip()
                             except (TypeError, ValueError, AttributeError):
-                                # Fallo cerrado: nunca publicar un JSON no
-                                # interpretado que pudiera contener material reservado.
                                 print("[HIPOTESIS] Respuesta no separable; rastro pendiente.")
                                 continue
 
@@ -1096,7 +1108,6 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Restaurar el estado emocional previo al arrancar
     await cargar_estado_emocional_persistente()
 
     if TELEGRAM_TOKEN:
@@ -1172,15 +1183,12 @@ async def telegram_webhook(request: Request):
 class PreguntaDashboard(BaseModel):
     q: str = Field(min_length=1, max_length=4000)
 
-
 class AccesoDashboard(BaseModel):
     password: str = Field(min_length=1, max_length=512)
     recordar: bool = False
 
-
 class TextoVozDashboard(BaseModel):
     texto: str = Field(min_length=1, max_length=2500)
-
 
 @app.post("/dashboard/login")
 def login_dashboard(datos: AccesoDashboard, request: Request):
@@ -1195,7 +1203,6 @@ def login_dashboard(datos: AccesoDashboard, request: Request):
     )
     return response
 
-
 @app.post("/dashboard/logout")
 def logout_dashboard(request: Request):
     validar_origen(request)
@@ -1203,16 +1210,13 @@ def logout_dashboard(request: Request):
     response.delete_cookie(COOKIE, path="/")
     return response
 
-
 @app.get("/dashboard/session")
 def sesion_dashboard(request: Request):
     return {"autenticado": tiene_sesion(request)}
 
-
 @app.post("/dashboard/voz", dependencies=[Depends(verificar_dashboard)])
 async def reproducir_voz_dashboard(datos: TextoVozDashboard, request: Request):
     validar_origen(request)
-    # La voz ya utilizada por LUMI para Telegram, sin cambiar su cerebro.
     comunicador = edge_tts.Communicate(datos.texto, "es-ES-ElviraNeural")
     audio_bytes = bytearray()
     try:
@@ -1231,7 +1235,6 @@ async def reproducir_voz_dashboard(datos: TextoVozDashboard, request: Request):
         bytes(audio_bytes), media_type="audio/mpeg",
         headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
     )
-
 
 @app.post("/preguntar", dependencies=[Depends(verificar_dashboard)])
 async def preguntar(datos: PreguntaDashboard):
@@ -1254,7 +1257,6 @@ def estado_cerebral():
         "en_sueno": homeostasis.en_sueno
     }
 
-# Los fondos son decorativos; el contenido, cerebro y chat siguen privados.
 PANEL_ARCHIVOS = {
     "lumi_panel.html",
     "login.html",
@@ -1265,7 +1267,6 @@ PANEL_ARCHIVOS = {
     "2 (Base luminosa para poner debajo del cristal azul cyan).jpg",
     "3  (fondo).jpg",
 }
-
 
 @app.get("/panel/{archivo}")
 def servir_panel_v8(archivo: str, request: Request):
@@ -1281,12 +1282,10 @@ def servir_panel_v8(archivo: str, request: Request):
         headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
     )
 
-
 @app.get("/dashboard")
 def dashboard_v8(request: Request):
     destino = "/panel/lumi_panel.html" if tiene_sesion(request) else "/panel/login.html"
     return RedirectResponse(url=destino, status_code=302, headers={"Cache-Control": "no-store"})
-
 
 @app.get("/dashboard-antiguo", response_class=HTMLResponse, dependencies=[Depends(verificar_dashboard)])
 def dashboard():
@@ -1474,3 +1473,4 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
+```
