@@ -217,15 +217,25 @@ def _terminos_de_evidencia(texto: str) -> set:
     }
     return {palabra for palabra in re.findall(r"[a-z0-9]{5,}", plano) if palabra not in excluidos}
 
+def _marca_temporal_memoria(bloque: str):
+    """Prefiere la fecha obtenida de Postgres frente a marcas incluidas en el texto."""
+    for patron in (
+        r"\[Fecha BD: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]",
+        r"\[Registrado el (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]",
+    ):
+        coincidencia = re.search(patron, bloque)
+        if coincidencia:
+            return coincidencia
+    return None
+
 def evaluar_cobertura_historica(recuerdos: str, respuesta: str, hoy=None) -> dict:
     """Comprueba fechas recuperadas y anclajes textuales, sin atribuir infalibilidad."""
     hoy = hoy or datetime.now(timezone.utc).date()
-    # Solo la primera marca temporal de cada fila devuelta por el RPC: el
-    # contenido de una memoria podría citar otras fechas sin ser otra fila.
+    # Una sola fecha por recuerdo. Preferimos created_at real de Supabase.
     bloques = (recuerdos or "").split("\n---\n")
     marcas = []
     for bloque in bloques:
-        marca = re.search(r"\[Registrado el (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]", bloque)
+        marca = _marca_temporal_memoria(bloque)
         if marca:
             marcas.append(marca.group(1))
     fechas = set()
@@ -239,11 +249,11 @@ def evaluar_cobertura_historica(recuerdos: str, respuesta: str, hoy=None) -> dic
         except ValueError:
             continue
     for bloque in bloques:
-        m = re.search(r"\[Registrado el (\d{4}-\d{2}-\d{2}) \d{2}:\d{2}:\d{2}\]", bloque)
+        m = _marca_temporal_memoria(bloque)
         if not m:
             continue
         try:
-            dia = datetime.strptime(m.group(1), "%Y-%m-%d").date()
+            dia = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S").date()
         except ValueError:
             continue
         if (hoy - dia).days < 14:
@@ -827,7 +837,19 @@ Siente su resonancia actual y devuélvelo strictly en formato JSON válido, sin 
     except Exception as e:
         print(f"Error guardando memoria vectorial en Supabase con resiliencia: {e}")
 
-async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
+def _formatear_fecha_bd(fecha) -> str | None:
+    """Normaliza un timestamptz de Supabase a fecha UTC verificable."""
+    if not fecha:
+        return None
+    try:
+        valor = datetime.fromisoformat(str(fecha).replace("Z", "+00:00"))
+        if valor.tzinfo is None:
+            valor = valor.replace(tzinfo=timezone.utc)
+        return valor.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+async def recuperar_memorias_hipocampo(estimulo: str, limite=5, fechas_verificadas=False) -> str:
     vec = await generar_embedding(estimulo)
     async def _op_recuperar():
         res = supabase.rpc("buscar_memorias_semanticas", {
@@ -837,6 +859,24 @@ async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
         }).execute()
         if res.data:
             filas = res.data
+            fechas_por_id = {}
+            if fechas_verificadas:
+                ids = sorted({x["id"] for x in filas if isinstance(x, dict) and x.get("id") is not None})
+                if ids:
+                    try:
+                        res_fechas = await asyncio.to_thread(
+                            lambda: supabase.table("memorias_vectoriales")
+                            .select("id,created_at").in_("id", ids).execute()
+                        )
+                        fechas_por_id = {
+                            str(x["id"]): fecha
+                            for x in (res_fechas.data or [])
+                            if (fecha := _formatear_fecha_bd(x.get("created_at")))
+                        }
+                    except Exception as e:
+                        print(f"[MEMORIA FECHAS]: No se pudieron consultar fechas de BD: {type(e).__name__}: {e}")
+                print(f"[MEMORIA FECHAS]: RPC={len(filas)} recuerdos | "
+                      f"con created_at verificado={len(fechas_por_id)}")
             metadatos = {}
             if _opcion_activa("LUMI_MEMORIA_MATICES_ENABLED"):
                 faltantes = [x["contenido"] for x in filas if "contenido" in x and "arousal" not in x]
@@ -853,6 +893,8 @@ async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
             resultados = []
             for x in filas:
                 contenido = x.get("contenido", "")
+                fecha_bd = fechas_por_id.get(str(x.get("id")))
+                fecha_visible = f"[Fecha BD: {fecha_bd}] " if fecha_bd else ""
                 extra = (x if "arousal" in x else metadatos.get(contenido, {}))
                 emocion = extra.get("dominant_emotion") or x.get("dominant_emotion") or "neutral"
                 matices = ""
@@ -865,8 +907,10 @@ async def recuperar_memorias_hipocampo(estimulo: str, limite=5) -> str:
                     if partes:
                         matices = " | " + ", ".join(partes)
                 similaridad = _numero_modelo(x.get("similaridad"), 0.0, -1.0, 1.0)
-                resultados.append(f"({similaridad:.2f}) [Emoción: {emocion}{matices}] {contenido}")
+                resultados.append(f"({similaridad:.2f}) [Emoción: {emocion}{matices}] {fecha_visible}{contenido}")
             return "\n---\n".join(resultados)
+        if fechas_verificadas:
+            print("[MEMORIA FECHAS]: RPC=0 recuerdos (sin coincidencias para esta consulta)")
         return "Sin recuerdos semánticos asociados."
 
     try:
@@ -915,9 +959,11 @@ async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_byte
    
     ram_cognitiva.agregar(f"Estímulo ({origen}): {texto or '[Imagen adjunta]'}", emisor="Drako")
     # Ampliar el muestreo semántico cuando Drako pregunta por varias semanas o meses.
-    limite_memoria = 12 if es_consulta_historica_amplia(texto) else 5
+    consulta_historica = es_consulta_historica_amplia(texto)
+    limite_memoria = 12 if consulta_historica else 5
     recuerdos_vectoriales = await recuperar_memorias_hipocampo(
-        texto if texto else "estímulo gráfico", limite=limite_memoria
+        texto if texto else "estímulo gráfico", limite=limite_memoria,
+        fechas_verificadas=consulta_historica,
     )
     
     # Cargar Guardrails y Restricciones Activas de Auditoría desde Supabase
