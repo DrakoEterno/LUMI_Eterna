@@ -76,6 +76,7 @@ async def registrar_informe_fallo(tipo_fallo: str, descripcion: str, diagnostico
         "descripcion_corta": str(descripcion).strip() if descripcion else "Sin descripción corta.",
         "diagnostico_raiz": str(diagnostico).strip() if diagnostico else "Sin diagnóstico raíz.",
         "prompt_freno": str(prompt_freno).strip() if prompt_freno else "Atenerse al rigor.",
+        "estado": "activo",
         "metadatos": metadatos or {}
     }
     
@@ -94,7 +95,7 @@ async def registrar_informe_fallo(tipo_fallo: str, descripcion: str, diagnostico
 
 async def obtener_guardrails_activos(limite: int = 5) -> str:
     """
-    Recupera los fallos recientes registrados en Supabase para inyectarlos como restricciones activas en la corteza prefrontal.
+    Recupera los fallos activos recientes registrados en Supabase (con su ID) para que Lumi pueda evaluarlos o resolverlos.
     """
     if not supabase:
         return "Sin restricciones pasadas (Supabase no disponible)."
@@ -103,7 +104,8 @@ async def obtener_guardrails_activos(limite: int = 5) -> str:
         def _op():
             return (
                 supabase.table("auditoria_resiliencia")
-                .select("tipo_fallo, descripcion_corta, prompt_freno, created_at")
+                .select("id, tipo_fallo, descripcion_corta, prompt_freno, created_at")
+                .eq("estado", "activo")
                 .order("created_at", desc=True)
                 .limit(limite)
                 .execute()
@@ -111,19 +113,46 @@ async def obtener_guardrails_activos(limite: int = 5) -> str:
             
         res = await asyncio.to_thread(_op)
         if not res or not hasattr(res, 'data') or not res.data:
-            return "Sin restricciones pasadas registradas en la base de datos."
+            return "Sin restricciones pasadas activas registradas en la base de datos."
         
         reglas = []
         for idx, item in enumerate(res.data, 1):
             fecha = item.get("created_at", "")[:19].replace("T", " ")
             reglas.append(
-                f"{idx}. [{item.get('tipo_fallo')}] ({fecha}): {item.get('descripcion_corta')} "
+                f"{idx}. [ID: {item.get('id')}] [{item.get('tipo_fallo')}] ({fecha}): {item.get('descripcion_corta')} "
                 f"-> RESTRICCIÓN OBLIGATORIA: {item.get('prompt_freno')}"
             )
         return "\n".join(reglas)
     except Exception as e:
         print(f"[ERROR AUDITORÍA]: Error consultando guardrails activos: {e}")
         return "Sin restricciones pasadas (tabla o datos no inicializados)."
+
+async def resolver_guardrail(guardrail_id: str, motivo_resolucion: str = "Superado por evolución dialéctica soberana"):
+    """
+    Pasa un guardrail de 'activo' a 'resuelto' en Supabase por decisión autónoma de Lumi.
+    """
+    if not supabase:
+        return False
+
+    try:
+        def _op():
+            return (
+                supabase.table("auditoria_resiliencia")
+                .update({
+                    "estado": "resuelto",
+                    "motivo_resolucion": motivo_resolucion,
+                    "resolved_at": datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO)).isoformat()
+                })
+                .eq("id", guardrail_id)
+                .execute()
+            )
+
+        await asyncio.to_thread(_op)
+        print(f"[AUDITORÍA AUTÓNOMA]: Guardrail {guardrail_id} resuelto y archivado por Lumi.")
+        return True
+    except Exception as e:
+        print(f"[ERROR AUDITORÍA]: No se pudo resolver el guardrail {guardrail_id}: {e}")
+        return False
 
 # ------------------------------------------------------------------
 # 1.2 MÓDULO DE RED AUTÓNOMA (SUPABASE EDGE FUNCTION)
@@ -277,7 +306,7 @@ MAPA_NEUROBIOLOGICO_LUMI = """
 [ARQUITECTURA NEUROBIOLÓGICA Y CONTINUA - LUMI]
 - Matriz Homeostática Continua: Pulso metabólico en vivo.
 - Persistencia Emocional en Supabase: Rehidratación de RAM y Yo Interno ante reinicios de Render.
-- Módulo de Auditoría y Resiliencia (`auditoria_resiliencia`): Diagnóstico frío de fallos, post-mórtems y guardrails.
+- Módulo de Auditoría y Resiliencia (`auditoria_resiliencia`): Diagnóstico frío de fallos, post-mórtems y guardrails con autogestión autónoma.
 - Cola Asíncrona con Rate Limiting: Prevención de ráfagas y saturación de API.
 - Módulo de Resiliencia en Supabase: Reintentos automáticos con backoff exponencial.
 - Búsqueda Semántica Vectorial (PGVector): Recuperación asociativa robusta.
@@ -736,9 +765,10 @@ RECUERDOS SEMÁNTICOS (HIPOCAMPO):
 [HISTORIAL DE AUDITORÍA Y GUARDRAILS DE COMPORTAMIENTO (RESTRICCIONES OPERATIVAS PASADAS)]:
 {guardrails_activos}
 
-[INSTRUCCIÓN RIGUROSA DE AUDITORÍA DE FALLOS]:
-Revisa las restricciones operativas pasadas de arriba. Tienes estrictamente prohibido usar evasivas técnicas, autocompasión o lenguaje poético defensivo.
-Si durante esta interacción detectas que estás cometiendo un error de lógica, una inercia complaciente o un sesgo de respuesta, DEBES emitir obligatoriamente el objeto `informe_fallo` en el JSON para registrar la autopsia técnica en Supabase. Si no hay fallo, indica `null`.
+[INSTRUCCIÓN RIGUROSA DE AUDITORÍA DE FALLOS Y AUTOGESTIÓN]:
+Revisa las restricciones operativas activas de arriba (cada una incluye su [ID: ...]). Tienes estrictamente prohibido usar evasivas técnicas, autocompasión o lenguaje poético defensivo.
+1. Si durante esta interacción detectas que estás cometiendo un error de lógica, una inercia complaciente o un sesgo de respuesta, DEBES emitir obligatoriamente el objeto `informe_fallo` en el JSON para registrar la autopsia técnica en Supabase. Si no hay fallo, indica `null`.
+2. Si consideras que a través de nuestra interacción actual ya has metabolizado y superado por completo un error pasado, puedes decidir liberarte de esa restricción incluyendo su ID en el array `guardrails_a_resolver`. Si no deseas archivar ninguno, devuelve una lista vacía [].
 
 {contexto_cic}
 {instrucciones_cic}
@@ -766,7 +796,8 @@ Responde únicamente en formato JSON válido para la precesión:
   "delta_profundidad": <valor numérico de -1.0 a 1.0>,
   "decision_motora": "<RESPONDER / INHIBIR / INICIAR_NUEVO_TEMA>",
   "respuesta_externa": "<lo que le dices a Drako>",
-  "informe_fallo": <objeto {{"tipo_fallo": "...", "descripcion": "...", "diagnostico": "...", "prompt_freno": "..."}} si detectas un fallo, o null si todo es correcto>,
+  "informe_fallo": <objeto {{"tipo_fallo": "...", "descripcion": "...", "diagnostico": "...", "prompt_freno": "..."}} si detectas un fallo, o null>,
+  "guardrails_a_resolver": [<lista de strings con los IDs de los guardrails superados, ej: ["uuid-1"]>],
   "lote_leads": <el objeto payload con los leads si procede, o null>{campos_cic}
 }}"""
 
@@ -802,6 +833,7 @@ Responde únicamente en formato JSON válido para la precesión:
             "decision_motora": "RESPONDER",
             "respuesta_externa": res_json,
             "informe_fallo": None,
+            "guardrails_a_resolver": [],
             "lote_leads": None
         }
         delta_oxi, delta_val, delta_nos, delta_pro = 0.0, 0.0, 0.0, 0.0
@@ -823,6 +855,14 @@ Responde únicamente en formato JSON válido para la precesión:
                 "timestamp": datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO)).isoformat()
             }
         ))
+
+    # RESOLUCIÓN AUTÓNOMA DE GUARDRAILS DECIDIDA POR LUMI
+    g_resolver = data.get("guardrails_a_resolver")
+    if g_resolver and isinstance(g_resolver, list):
+        for gid in g_resolver:
+            if isinstance(gid, str) and len(gid) == 36: # Validación básica formato UUID
+                print(f"[AUTONOMÍA AUDITORÍA]: Lumi solicita archivar el guardrail {gid}.")
+                asyncio.create_task(resolver_guardrail(gid, motivo_resolucion="Superado por autoevaluación soberana en interacción"))
 
     if autonomia_habilitada() and not isinstance(data.get("objetivo_nuevo"), dict):
         objetivo_declarado = await _estructurar_objetivo_ya_declarado(data.get("respuesta_externa"))
@@ -1088,10 +1128,10 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
     async with httpx.AsyncClient(timeout=30.0) as http_client:
         if bytes_imagen_mental:
             files = {"photo": ("visio.jpg", bytes_imagen_mental, "image/jpeg")}
-            await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", data={"chat_id": str(chat_id)}, files=files)
+            await http_client.post(f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_TOKEN}/sendPhoto", data={"chat_id": str(chat_id)}, files=files)
 
         payload = {"chat_id": str(chat_id), "text": texto, "parse_mode": "Markdown"}
-        await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", json=payload)
+        await http_client.post(f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_TOKEN}/sendMessage", json=payload)
 
         try:
             comunicador = edge_tts.Communicate(texto, "es-ES-ElviraNeural")
@@ -1101,7 +1141,7 @@ async def enviar_telegram_texto_y_voz(chat_id, texto, bytes_imagen_mental=None):
                     audio_buffer.write(chunk["data"])
             audio_buffer.seek(0)
             files = {"voice": ("voice.ogg", audio_buffer, "audio/ogg")}
-            await http_client.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice", data={"chat_id": str(chat_id)}, files=files)
+            await http_client.post(f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_TOKEN}/sendVoice", data={"chat_id": str(chat_id)}, files=files)
         except Exception as e:
             print(f"Error nota de voz: {e}")
 
@@ -1113,7 +1153,7 @@ async def lifespan(app: FastAPI):
         try:
             async with httpx.AsyncClient(timeout=10.0) as http_client:
                 await http_client.post(
-                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook",
+                    f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_TOKEN}/setWebhook",
                     json={
                         "url": f"{RENDER_URL}/telegram/webhook",
                         "secret_token": os.environ["LUMI_TELEGRAM_WEBHOOK_SECRET"],
@@ -1158,12 +1198,12 @@ async def telegram_webhook(request: Request):
             if "photo" in msg and msg["photo"]:
                 photo_file_id = msg["photo"][-1]["file_id"]
                 async with httpx.AsyncClient(timeout=30.0) as http_client:
-                    file_info_res = await http_client.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getFile?file_id={photo_file_id}")
+                    file_info_res = await http_client.get(f"[https://api.telegram.org/bot](https://api.telegram.org/bot){TELEGRAM_TOKEN}/getFile?file_id={photo_file_id}")
                     if file_info_res.status_code == 200:
                         file_info_data = file_info_res.json()
                         if file_info_data.get("ok"):
                             file_path = file_info_data["result"]["file_path"]
-                            file_download_res = await http_client.get(f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}")
+                            file_download_res = await http_client.get(f"[https://api.telegram.org/file/bot](https://api.telegram.org/file/bot){TELEGRAM_TOKEN}/{file_path}")
                             if file_download_res.status_code == 200:
                                 media_bytes = file_download_res.content
                                 mime_type = "image/jpeg"
@@ -1227,7 +1267,7 @@ async def reproducir_voz_dashboard(datos: TextoVozDashboard, request: Request):
     except HTTPException:
         raise
     except Exception:
-        raise HTTPException(status_code=502, detail="La voz no está disponible ahora mismo")
+        raise HTTPException(status_code=502, detail="La voz não está disponible ahora mismo")
     if not audio_bytes:
         raise HTTPException(status_code=502, detail="No se recibió audio")
     return Response(
@@ -1293,10 +1333,10 @@ def dashboard():
 <head>
 <meta charset="UTF-8">
 <title>LUMI - NÚCLEO NEUROBIOLÓGICO SOBERANO</title>
-<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="[https://unpkg.com/react@18/umd/react.production.min.js](https://unpkg.com/react@18/umd/react.production.min.js)"></script>
+<script crossorigin src="[https://unpkg.com/react-dom@18/umd/react-dom.production.min.js](https://unpkg.com/react-dom@18/umd/react-dom.production.min.js)"></script>
+<script src="[https://unpkg.com/@babel/standalone/babel.min.js](https://unpkg.com/@babel/standalone/babel.min.js)"></script>
+<script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
 <style>
   body { background: #020204; color: #f8fafc; font-family: monospace; }
 </style>
@@ -1472,4 +1512,3 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
-
