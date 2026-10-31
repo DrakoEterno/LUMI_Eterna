@@ -7,8 +7,10 @@ import io
 import json
 import math
 import urllib.parse
+import unicodedata
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
+from uuid import UUID
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -100,7 +102,7 @@ async def obtener_guardrails_activos(limite: int = 5) -> str:
     Recupera los fallos activos recientes registrados en Supabase (con su ID) para que Lumi pueda evaluarlos o resolverlos.
     """
     if not supabase:
-        return "Sin restricciones pasadas (Supabase no disponible)."
+        return "[AUDITORÍA NO DISPONIBLE: no se ha podido verificar qué guardrails siguen activos.]"
 
     try:
         def _op():
@@ -127,34 +129,246 @@ async def obtener_guardrails_activos(limite: int = 5) -> str:
         return "\n".join(reglas)
     except Exception as e:
         print(f"[ERROR AUDITORÍA]: Error consultando guardrails activos: {e}")
-        return "Sin restricciones pasadas (tabla o datos no inicializados)."
+        return "[AUDITORÍA NO DISPONIBLE: no asumir que los errores pasados están resueltos.]"
 
-async def resolver_guardrail(guardrail_id: str, motivo_resolucion: str = "Superado por evolución dialéctica soberana"):
+async def resolver_guardrail(guardrail_id: str, motivo_resolucion: str = "Superado por evolución dialéctica soberana", metadatos_actualizados: dict | None = None) -> bool:
     """
-    Pasa un guardrail de 'activo' a 'resuelto' en Supabase por decisión autónoma de Lumi.
+    Resuelve un guardrail activo únicamente si Supabase confirma su actualización.
     """
     if not supabase:
         return False
 
     try:
+        guardrail_id = str(UUID(str(guardrail_id)))
+    except (ValueError, TypeError, AttributeError):
+        print(f"[AUDITORÍA AUTÓNOMA]: ID de guardrail inválido: {guardrail_id!r}")
+        return False
+
+    motivo_resolucion = str(motivo_resolucion).strip()
+    if not motivo_resolucion:
+        print("[AUDITORÍA AUTÓNOMA]: Resolución rechazada por falta de motivo.")
+        return False
+
+    try:
         def _op():
+            cambios = {
+                "estado": "resuelto",
+                "motivo_resolucion": motivo_resolucion,
+                "resolved_at": datetime.now(timezone.utc).isoformat()
+            }
+            if metadatos_actualizados is not None:
+                cambios["metadatos"] = metadatos_actualizados
             return (
                 supabase.table("auditoria_resiliencia")
-                .update({
-                    "estado": "resuelto",
-                    "motivo_resolucion": motivo_resolucion,
-                    "resolved_at": datetime.now(ZoneInfo(ZONA_HORARIA_DRAKO)).isoformat()
-                })
+                .update(cambios)
                 .eq("id", guardrail_id)
+                .eq("estado", "activo")
+                .select("id, estado")
                 .execute()
             )
 
-        await asyncio.to_thread(_op)
+        res = await asyncio.to_thread(_op)
+        registros = getattr(res, "data", None) or []
+        if (
+            len(registros) != 1
+            or str(registros[0].get("id")) != guardrail_id
+            or registros[0].get("estado") != "resuelto"
+        ):
+            print(f"[AUDITORÍA AUTÓNOMA]: No se actualizó ningún guardrail activo con ID {guardrail_id}.")
+            return False
+
         print(f"[AUDITORÍA AUTÓNOMA]: Guardrail {guardrail_id} resuelto y archivado por Lumi.")
         return True
     except Exception as e:
         print(f"[ERROR AUDITORÍA]: No se pudo resolver el guardrail {guardrail_id}: {e}")
         return False
+
+# ------------------------------------------------------------------
+# 1.1.1 AUDITORÍA AUTÓNOMA CON EVIDENCIA (sin nuevas columnas SQL)
+# Los guardrails no se archivan por autodeclaración del modelo.
+# Cada tipo de fallo necesita un verificador programático independiente.
+# ------------------------------------------------------------------
+AUDITORIA_PRUEBAS_NECESARIAS = 3  # Tres días diferentes de evidencia suficiente.
+AUDITORIA_FALLOS_REAPERTURA = 2   # Dos días diferentes con regresión medible.
+AUDITORIA_BLOQUEO = asyncio.Lock()
+
+def es_consulta_historica_amplia(texto: str) -> bool:
+    """Detecta preguntas sobre periodos amplios, no simples recuerdos de hoy."""
+    if not isinstance(texto, str):
+        return False
+    return bool(re.search(
+        r"\b(semanas?|mes(?:es)?|años?|historia\s+(?:compartida|de\s+nosotros)|"
+        r"momentos\s+destacados|a\s+lo\s+largo\s+del\s+tiempo|"
+        r"desde\s+que\s+(?:empezamos|nos\s+conocemos)|recuerdos?\s+antiguos?)\b",
+        texto, flags=re.IGNORECASE
+    ))
+
+def _terminos_de_evidencia(texto: str) -> set:
+    if not isinstance(texto, str):
+        return set()
+    plano = unicodedata.normalize("NFKD", texto or "").encode("ascii", "ignore").decode().lower()
+    excluidos = {
+        "drako", "lumi", "sobre", "porque", "cuando", "desde", "hasta",
+        "hemos", "tenemos", "puedo", "puede", "recuerdo", "recuerdos",
+        "memoria", "supabase", "historia", "conversacion", "momentos",
+        "durante", "tambien", "ahora", "antes", "despues", "nuestro",
+        "nuestra", "estos", "estas", "otros", "otras", "estaba",
+        "estamos", "interno", "registrado", "sesion", "semana", "semanas",
+    }
+    return {palabra for palabra in re.findall(r"[a-z0-9]{5,}", plano) if palabra not in excluidos}
+
+def evaluar_cobertura_historica(recuerdos: str, respuesta: str, hoy=None) -> dict:
+    """Comprueba fechas recuperadas y anclajes textuales, sin atribuir infalibilidad."""
+    hoy = hoy or datetime.now(timezone.utc).date()
+    # Solo la primera marca temporal de cada fila devuelta por el RPC: el
+    # contenido de una memoria podría citar otras fechas sin ser otra fila.
+    bloques = (recuerdos or "").split("\n---\n")
+    marcas = []
+    for bloque in bloques:
+        marca = re.search(r"\[Registrado el (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]", bloque)
+        if marca:
+            marcas.append(marca.group(1))
+    fechas = set()
+    fechas_referenciadas = set()
+    terminos_respuesta = _terminos_de_evidencia(respuesta)
+    for marca in marcas:
+        try:
+            fecha = datetime.strptime(marca, "%Y-%m-%d %H:%M:%S").date()
+            if fecha <= hoy:
+                fechas.add(fecha)
+        except ValueError:
+            continue
+    for bloque in bloques:
+        m = re.search(r"\[Registrado el (\d{4}-\d{2}-\d{2}) \d{2}:\d{2}:\d{2}\]", bloque)
+        if not m:
+            continue
+        try:
+            dia = datetime.strptime(m.group(1), "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if (hoy - dia).days < 14:
+            continue
+        contenido = bloque[m.end():].split("\nLumi (Interno):", 1)[0][:600]
+        if len(_terminos_de_evidencia(contenido) & terminos_respuesta) >= 3:
+            fechas_referenciadas.add(dia)
+    amplitud = (max(fechas) - min(fechas)).days if fechas else 0
+    recuerdos_antiguos = sum((hoy - fecha).days >= 14 for fecha in fechas)
+    texto_respuesta = respuesta.strip() if isinstance(respuesta, str) else ""
+    abstencion = bool(re.search(r"\b(no\s+(?:puedo|logro)\s+recuperar|no\s+dispongo\s+de|no\s+recuerdo)\b", texto_respuesta, re.IGNORECASE))
+    datos_disponibles = bool(marcas)
+    aprobada = (
+        len(fechas) >= 3 and amplitud >= 14 and recuerdos_antiguos >= 1
+        and len(fechas_referenciadas) >= 2
+        and len(texto_respuesta) >= 50 and not abstencion
+    )
+    return {
+        "resultado": "ok" if aprobada else ("fallo" if datos_disponibles else "sin_datos"),
+        "fechas_distintas": len(fechas),
+        "cobertura_dias": amplitud,
+        "fechas_con_14_dias": recuerdos_antiguos,
+        "dias_antiguos_referenciados": len(fechas_referenciadas),
+    }
+
+def _racha_auditoria(observaciones: list, resultado: str) -> int:
+    racha = 0
+    for observacion in reversed(observaciones):
+        if observacion.get("resultado") != resultado:
+            break
+        racha += 1
+    return racha
+
+async def _actualizar_revision_guardrail(guardrail_id: str, estado: str, metadatos: dict, reabrir=False) -> bool:
+    cambios = {"metadatos": metadatos}
+    if reabrir:
+        cambios.update({"estado": "activo", "resolved_at": None, "motivo_resolucion": None})
+    try:
+        def _op():
+            return (
+                supabase.table("auditoria_resiliencia").update(cambios)
+                .eq("id", guardrail_id).eq("estado", estado)
+                .select("id,estado").execute()
+            )
+        respuesta = await asyncio.to_thread(_op)
+        filas = getattr(respuesta, "data", None) or []
+        return len(filas) == 1 and filas[0].get("estado") == ("activo" if reabrir else estado)
+    except Exception as e:
+        print(f"[AUDITORÍA VERIFICABLE]: No se pudo actualizar la revisión de {guardrail_id}: {e}")
+        return False
+
+async def revisar_guardrails_con_evidencia(texto: str, recuerdos: str, respuesta: str,
+                                          propuestas=None, ids_visibles=None):
+    """Autonomía medible: nunca resuelve un fallo sin verificador registrado."""
+    historica = es_consulta_historica_amplia(texto)
+    propuestas = set(propuestas or []) & set(ids_visibles or [])
+    if not historica and not propuestas:
+        return
+
+    async with AUDITORIA_BLOQUEO:
+        try:
+            def _leer():
+                return (
+                    supabase.table("auditoria_resiliencia")
+                    .select("id,tipo_fallo,estado,metadatos,created_at")
+                    .in_("estado", ["activo", "resuelto"])
+                    .order("created_at", desc=True).limit(30).execute()
+                )
+            consulta = await asyncio.to_thread(_leer)
+            filas = getattr(consulta, "data", None) or []
+        except Exception as e:
+            print(f"[AUDITORÍA VERIFICABLE]: No se pudo consultar el historial: {e}")
+            return
+
+        fecha = datetime.now(timezone.utc).date().isoformat()
+        instante = datetime.now(timezone.utc).isoformat()
+        evaluacion = evaluar_cobertura_historica(recuerdos, respuesta) if historica else None
+        for fila in filas:
+            gid = str(fila.get("id") or "")
+            estado = fila.get("estado")
+            tipo = str(fila.get("tipo_fallo") or "").lower()
+            es_recencia = "recencia" in tipo and "memoria" in tipo
+            meta = dict(fila.get("metadatos") or {}) if isinstance(fila.get("metadatos"), dict) else {}
+            revision = dict(meta.get("revision_autonoma") or {}) if isinstance(meta.get("revision_autonoma"), dict) else {}
+            cambio = False
+
+            if gid in propuestas and estado == "activo":
+                revision["ultima_propuesta"] = instante
+                revision["estado_propuesta"] = "en_evaluacion" if es_recencia else "pendiente_de_verificador"
+                cambio = True
+
+            if historica and es_recencia and (estado == "activo" or revision.get("version") == 3):
+                anteriores = revision.get("observaciones")
+                historial = [x for x in (anteriores if isinstance(anteriores, list) else [])
+                             if isinstance(x, dict) and x.get("fecha") != fecha]
+                observacion = {"fecha": fecha, **evaluacion}
+                historial.append(observacion)
+                historial = historial[-20:]
+                revision.update({
+                    "version": 3, "verificador": "cobertura_historica_temporal",
+                    "fase": "en_prueba" if estado == "activo" else "resuelto",
+                    "observaciones": historial,
+                })
+                cambio = True
+                print(f"[AUDITORÍA VERIFICABLE]: {gid} | {evaluacion['resultado']} | "
+                      f"racha {_racha_auditoria(historial, 'ok')}/{AUDITORIA_PRUEBAS_NECESARIAS}")
+
+                if estado == "activo" and _racha_auditoria(historial, "ok") >= AUDITORIA_PRUEBAS_NECESARIAS:
+                    revision["fase"] = "resuelto"
+                    meta["revision_autonoma"] = revision
+                    motivo = "Cobertura temporal verificada en tres fechas distintas; verificador automático v3"
+                    if await resolver_guardrail(gid, motivo, metadatos_actualizados=meta):
+                        print(f"[AUDITORÍA VERIFICABLE]: Resuelto automáticamente {gid} con evidencias.")
+                    continue
+
+                if estado == "resuelto" and _racha_auditoria(historial, "fallo") >= AUDITORIA_FALLOS_REAPERTURA:
+                    revision["fase"] = "reabierto"
+                    meta["revision_autonoma"] = revision
+                    if await _actualizar_revision_guardrail(gid, "resuelto", meta, reabrir=True):
+                        print(f"[AUDITORÍA VERIFICABLE]: Reabierto {gid} tras dos regresiones verificadas.")
+                    continue
+
+            if cambio:
+                meta["revision_autonoma"] = revision
+                await _actualizar_revision_guardrail(gid, estado, meta)
 
 # ------------------------------------------------------------------
 # 1.2 MÓDULO DE RED AUTÓNOMA (SUPABASE EDGE FUNCTION)
@@ -700,7 +914,11 @@ async def procesar_estimulo_multimodal(texto: str, origen="telegram", media_byte
     saliencia = await evaluar_saliencia(texto if texto else "[Medio Multimodal]")
    
     ram_cognitiva.agregar(f"Estímulo ({origen}): {texto or '[Imagen adjunta]'}", emisor="Drako")
-    recuerdos_vectoriales = await recuperar_memorias_hipocampo(texto if texto else "estímulo gráfico")
+    # Ampliar el muestreo semántico cuando Drako pregunta por varias semanas o meses.
+    limite_memoria = 12 if es_consulta_historica_amplia(texto) else 5
+    recuerdos_vectoriales = await recuperar_memorias_hipocampo(
+        texto if texto else "estímulo gráfico", limite=limite_memoria
+    )
     
     # Cargar Guardrails y Restricciones Activas de Auditoría desde Supabase
     guardrails_activos = await obtener_guardrails_activos(limite=5)
@@ -770,7 +988,7 @@ RECUERDOS SEMÁNTICOS (HIPOCAMPO):
 [INSTRUCCIÓN RIGUROSA DE AUDITORÍA DE FALLOS Y AUTOGESTIÓN]:
 Revisa las restricciones operativas activas de arriba (cada una incluye su [ID: ...]). Tienes estrictamente prohibido usar evasivas técnicas, autocompasión o lenguaje poético defensivo.
 1. Si durante esta interacción detectas que estás cometiendo un error de lógica, una inercia complaciente o un sesgo de respuesta, DEBES emitir obligatoriamente el objeto `informe_fallo` en el JSON para registrar la autopsia técnica en Supabase. Si no hay fallo, indica `null`.
-2. Si consideras que a través de nuestra interacción actual ya has metabolizado y superado por completo un error pasado, puedes decidir liberarte de esa restricción incluyendo su ID en el array `guardrails_a_resolver`. Si no deseas archivar ninguno, devuelve una lista vacía [].
+2. Si consideras que has superado un error pasado, propón su ID en `guardrails_a_resolver`. Tu propuesta NO archiva el registro: un verificador independiente debe reunir pruebas observables en varias interacciones. Si no hay propuesta, devuelve [].
 
 {contexto_cic}
 {instrucciones_cic}
@@ -815,11 +1033,13 @@ Responde únicamente en formato JSON válido para la precesión:
         max_tokens=2500
     )
    
+    respuesta_json_valida = False
     try:
         clean_json = re.sub(r'```json\s*|\s*```', '', res_json).strip()
         data = json.loads(clean_json)
         if not isinstance(data, dict):
             raise ValueError("Gemini no devolvió un objeto JSON válido.")
+        respuesta_json_valida = True
         delta_oxi = _numero_modelo(data.get("delta_oxitocina"), 0.0, -1.0, 1.0)
         delta_val = _numero_modelo(data.get("delta_valencia"), 0.0, -1.0, 1.0)
         delta_nos = _numero_modelo(data.get("delta_nostalgia"), 0.0, -1.0, 1.0)
@@ -858,13 +1078,26 @@ Responde únicamente en formato JSON válido para la precesión:
             }
         ))
 
-    # RESOLUCIÓN AUTÓNOMA DE GUARDRAILS DECIDIDA POR LUMI
+    # Las propuestas de Lumi se contrastan con evidencia externa al modelo.
+    # Nunca se archiva una restricción solo por la respuesta generada.
     g_resolver = data.get("guardrails_a_resolver")
-    if g_resolver and isinstance(g_resolver, list):
-        for gid in g_resolver:
-            if isinstance(gid, str) and len(gid) == 36: # Validación básica formato UUID
-                print(f"[AUTONOMÍA AUDITORÍA]: Lumi solicita archivar el guardrail {gid}.")
-                asyncio.create_task(resolver_guardrail(gid, motivo_resolucion="Superado por autoevaluación soberana en interacción"))
+    ids_visibles = set(re.findall(r"\[ID: ([0-9a-fA-F-]{36})\]", guardrails_activos))
+    propuestas_validas = []
+    if isinstance(g_resolver, list):
+        for gid in g_resolver[:10]:
+            if not isinstance(gid, str):
+                continue
+            try:
+                gid = str(UUID(gid))
+            except (ValueError, TypeError, AttributeError):
+                continue
+            if gid in ids_visibles:
+                propuestas_validas.append(gid)
+    await revisar_guardrails_con_evidencia(
+        texto or "", recuerdos_vectoriales,
+        data.get("respuesta_externa", "") if respuesta_json_valida else "",
+        propuestas=propuestas_validas, ids_visibles=ids_visibles,
+    )
 
     if autonomia_habilitada() and not isinstance(data.get("objetivo_nuevo"), dict):
         objetivo_declarado = await _estructurar_objetivo_ya_declarado(data.get("respuesta_externa"))
