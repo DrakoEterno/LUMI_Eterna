@@ -43,9 +43,11 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-# Formateo defensivo para asegurar el protocolo en la URL del webhook
-_render_url_env = os.getenv("RENDER_EXTERNAL_URL", "https://lumi-eterna.onrender.com").strip()
-if _render_url_env and not _render_url_env.startswith(("http://", "https://")):
+# Corrección robusta para detectar si la variable está vacía o sin protocolo
+_render_url_env = os.getenv("RENDER_EXTERNAL_URL", "").strip()
+if not _render_url_env:
+    RENDER_URL = "https://lumi-eterna.onrender.com"
+elif not _render_url_env.startswith(("http://", "https://")):
     RENDER_URL = f"https://{_render_url_env}"
 else:
     RENDER_URL = _render_url_env
