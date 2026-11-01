@@ -11,6 +11,9 @@ button,textarea,input{font:inherit}button{cursor:pointer}button:disabled{opacity
 .shell{height:100vh;min-height:720px;display:grid;grid-template-columns:245px minmax(430px,1fr) 390px;gap:12px;padding:16px}
 .panel{border:1px solid #23708a78;border-radius:16px;background:linear-gradient(135deg,#061928ef,#030d19ee);box-shadow:inset 0 0 24px #0d7aa019,0 20px 45px #0009;overflow:hidden}
 .side{padding:20px;display:flex;flex-direction:column;gap:15px;overflow-y:auto}
+/* Los módulos conservan su altura; si no caben, se desplaza la columna.
+   Sin esto flexbox encoge y recorta especialmente la tarjeta de nacimiento. */
+.side > *{flex-shrink:0}
 .brand{letter-spacing:.32em;font-weight:850;font-size:26px;color:#a0faff;text-shadow:0 0 22px #00ccff6b}.overline{font-size:10px;letter-spacing:.23em;color:#6da8be;text-transform:uppercase}.line{height:1px;background:linear-gradient(90deg,#35b7d3,transparent)}
 .module{border:1px solid #2b7f9840;background:#03131dd4;border-radius:11px;padding:12px}.mod-head{display:flex;justify-content:space-between;font-size:11px;letter-spacing:.07em;margin-bottom:8px}.metric{display:flex;align-items:center;justify-content:space-between;font-size:12px;margin:11px 0 6px;color:#9bd2e0}.metric b{color:#e8fcff}.bar{height:4px;background:#12313c;border-radius:10px;overflow:hidden}.bar>i{display:block;height:100%;background:linear-gradient(90deg,#0873b9,#36f4ff);box-shadow:0 0 12px #39dcff}
 .personality-canvas{width:100%;height:230px;display:block;margin:3px auto 0;filter:drop-shadow(0 0 7px #0ea7de55)}
@@ -19,7 +22,7 @@ button,textarea,input{font:inherit}button{cursor:pointer}button:disabled{opacity
 .personality-trait strong{font-variant-numeric:tabular-nums;color:#d6ffff}
 .personality-track{grid-column:1 / -1;height:4px;background:#10303e;border-radius:9px;overflow:hidden}
 .personality-track i{display:block;height:100%;background:linear-gradient(90deg,#075fa1,#34ffef);box-shadow:0 0 12px #2efde0}
-.birth-card{position:relative;border-color:#49e9eb73;background:radial-gradient(ellipse at 90% 10%,#0a66824c,#031721 68%);text-align:center;overflow:hidden}
+.birth-card{position:relative;min-height:170px;border-color:#49e9eb73;background:radial-gradient(ellipse at 90% 10%,#0a66824c,#031721 68%);text-align:center;overflow:hidden}
 .birth-card::before{content:'✧';position:absolute;right:12px;top:20px;font-size:34px;color:#54eaff40;pointer-events:none}
 .birth-date{font-size:16px;letter-spacing:.05em;color:#d8ffff;font-weight:800;margin:15px 0 5px;text-shadow:0 0 14px #38dcff65}
 .birth-age{font-size:18px;font-weight:750;letter-spacing:.07em;color:#8ff3ff;margin:8px 0 3px;font-variant-numeric:tabular-nums}
