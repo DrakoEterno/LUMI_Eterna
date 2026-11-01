@@ -159,14 +159,12 @@ async function refresh() {
     if (!response.ok) throw Error('HTTP ' + response.status);
     paint(await response.json());
     refreshPersonality();
-    $('conn-note').textContent = 'Neurodatos recibidos directamente de LUMI.';
     $('chat-status').textContent = 'En línea';
     $('chat-status').classList.add('online');
     $('chat-status').style.color = '#69f5dd';
   } catch (error) {
     $('state').textContent = 'SIN CONEXIÓN';
-    $('conn-note').textContent = 'Consulta pendiente: ' + error.message +
-      '. Render podría estar despertándose.';
+    $('chat-status').textContent = 'Sin conexión: ' + error.message;
     $('chat-status').classList.remove('online');
   } finally {
     refreshing = false;
@@ -361,7 +359,6 @@ $('nav-stream').onclick = () => {
   $('monologue-card').scrollIntoView({behavior: 'smooth', block: 'center'});
 };
 $('speak-stream').onclick = () => speak(monologueText, $('speak-stream'));
-$('refresh').onclick = refresh;
 $('send').onclick = send;
 $('input').addEventListener('input', updateCount);
 $('input').addEventListener('keydown', event => {
