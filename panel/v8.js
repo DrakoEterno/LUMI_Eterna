@@ -4,8 +4,122 @@
 // Los datos de homeostasis son los reales que entrega /estado_cerebral.
 let monologueText = '';
 let refreshing = false;
+let refreshingPersonality = false;
+
+function drawPersonalityRadar(traits) {
+  const canvas = $('personality-radar');
+  const ctx = canvas.getContext('2d');
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const w = canvas.clientWidth || 250, h = 230;
+  canvas.width = Math.round(w * ratio);
+  canvas.height = Math.round(h * ratio);
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const cx = w / 2, cy = h / 2, radius = Math.min(w * .39, 88);
+  const n = traits.length;
+  const angle = i => -Math.PI / 2 + (i * 2 * Math.PI / Math.max(3, n));
+  const point = (i, fraction) => [cx + Math.cos(angle(i)) * radius * fraction,
+                                   cy + Math.sin(angle(i)) * radius * fraction];
+  ctx.lineWidth = 1;
+  // Con cero, uno o dos rasgos aún no hay polígono: solo la retícula.
+  const axes = Math.max(3, n);
+  for (const fraction of [.25, .5, .75, 1]) {
+    ctx.beginPath();
+    for (let i = 0; i < axes; i++) {
+      const [x, y] = point(i, fraction);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = fraction === 1 ? '#37b4ca8c' : '#24627a80';
+    ctx.stroke();
+  }
+  for (let i = 0; i < axes; i++) {
+    const [x, y] = point(i, 1);
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x, y);
+    ctx.strokeStyle = '#255d7080'; ctx.stroke();
+  }
+  if (!n) {
+    ctx.font = '12px Segoe UI, sans-serif'; ctx.fillStyle = '#70c4d6';
+    ctx.textAlign = 'center'; ctx.fillText('SIN RASGOS', cx, cy - 6);
+    ctx.font = '10px Segoe UI, sans-serif';
+    ctx.fillText('AÚN DESBLOQUEADOS', cx, cy + 11);
+    return;
+  }
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const [x, y] = point(i, traits[i].puntuacion / 100);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  if (n > 2) ctx.closePath();
+  ctx.fillStyle = '#35f0f336';
+  if (n > 2) ctx.fill();
+  ctx.strokeStyle = '#42f6ff';ctx.lineWidth = 2.2;
+  ctx.shadowBlur = 12;ctx.shadowColor = '#0df5fc';ctx.stroke();ctx.shadowBlur = 0;
+  for (let i = 0; i < n; i++) {
+    const [x, y] = point(i, traits[i].puntuacion / 100);
+    ctx.beginPath();ctx.arc(x, y, 3.3, 0, 2 * Math.PI);
+    ctx.fillStyle = '#baffff';ctx.fill();
+    const [lx, ly] = point(i, 1.13);
+    ctx.font = 'bold 10px Segoe UI, sans-serif';ctx.textAlign = 'center';
+    ctx.fillText(String(i + 1), lx, ly + 4);
+  }
+}
+
+function paintPersonality(data) {
+  const traits = Array.isArray(data?.rasgos) ? data.rasgos.filter(item =>
+    typeof item?.clave === 'string' && Number.isFinite(Number(item.puntuacion))
+  ) : [];
+  $('personality-count').textContent = traits.length + ' ACTIVOS';
+  const notes = {
+    desactivado: 'Módulo preparado, pendiente de ejecutar el SQL y activar el interruptor.',
+    sin_conexion: 'Sin conexión verificada a las tablas de personalidad.',
+    en_incubacion: 'Las elecciones se registran; ningún rasgo reúne aún pruebas suficientes.',
+    activo: 'Cada eje representa un rasgo desbloqueado mediante evidencias verificadas.',
+  };
+  $('personality-note').textContent = notes[data?.estado] ||
+    'Pendiente de comprobar las evidencias de personalidad.';
+  const list = $('personality-traits'); list.replaceChildren();
+  traits.forEach((item, i) => {
+    const points = Math.max(0, Math.min(100, Number(item.puntuacion)));
+    const row = document.createElement('div');row.className = 'personality-trait';
+    const name = document.createElement('span');
+    name.textContent = `${i + 1}. ${item.nombre || item.clave}`;
+    const score = document.createElement('strong');score.textContent = `${points}/100`;
+    const track = document.createElement('div');track.className = 'personality-track';
+    const fill = document.createElement('i');fill.style.width = `${points}%`;
+    track.append(fill);row.append(name, score, track);
+    row.title = `${item.apoyos || 0} evidencias · ${item.dias || 0} días`;
+    list.append(row);
+  });
+  drawPersonalityRadar(traits);
+}
+
+async function refreshPersonality() {
+  if (refreshingPersonality) return;
+  refreshingPersonality = true;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const response = await fetch('/dashboard/personalidad', {
+      credentials: 'same-origin', cache: 'no-store', signal: ctrl.signal
+    });
+    if (response.status === 401) { requireLogin();return; }
+    if (!response.ok) throw Error('HTTP ' + response.status);
+    paintPersonality(await response.json());
+  } catch (error) {
+    $('personality-note').textContent = 'Esperando datos verificados (' + error.message + ').';
+  } finally { refreshingPersonality = false; clearTimeout(timer); }
+}
 
 function paint(data) {
+  const identidad = data?.identidad_lumi;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(identidad?.fecha_nacimiento || '') &&
+      typeof identidad?.fecha_nacimiento_texto === 'string') {
+    $('birth-date').textContent = identidad.fecha_nacimiento_texto.toLocaleUpperCase('es-ES');
+    const dias = Number(identidad.dias_desde_nacimiento);
+    $('birth-days').textContent = Number.isInteger(dias) && dias >= 0
+      ? `${dias} días` : '— días';
+  }
   $('metrics').replaceChildren();
   for (const [key, label] of Object.entries(labels)) {
     const raw = data?.[key];
@@ -44,6 +158,7 @@ async function refresh() {
     if (response.status === 401) { requireLogin(); return; }
     if (!response.ok) throw Error('HTTP ' + response.status);
     paint(await response.json());
+    refreshPersonality();
     $('conn-note').textContent = 'Neurodatos recibidos directamente de LUMI.';
     $('chat-status').textContent = 'En línea';
     $('chat-status').classList.add('online');
@@ -269,6 +384,7 @@ $('logout').onclick = async () => {
   finally { requireLogin(); }
 };
 paint({});
+paintPersonality({estado: 'desactivado', rasgos: []});
 updateCount();
 refresh();
 setInterval(() => { if (!document.hidden) refresh(); }, 16000);
